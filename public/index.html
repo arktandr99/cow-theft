@@ -5272,7 +5272,7 @@ function drawCompass() {
   const tcol = t => ['#ff5a5a', '#5a9bff', '#46d46a'][t % 3];                  // Teamfarben für den Kompass etwas heller als in der Welt (Blau ging vor dem Himmel unter)
   const mark = (x0, z0, kind, col, ring, label) => {                          // Marker auf der Leiste; kind 'pen' Fahne, 'cow' Raute
     const dx = x0 - pos.x, dz = z0 - pos.z, a = rel(Math.atan2(dx, -dz)), edge = Math.abs(a) > HALF * 0.96, x = xOf(Math.max(-HALF * 0.96, Math.min(HALF * 0.96, a))), y = 31;
-    g.globalAlpha = edge ? 0.55 : 1;
+    g.globalAlpha = edge && kind !== 'pen' ? 0.55 : 1;                          // das eigene Gehege wird auch am Rand nicht abgedunkelt
     if (kind === 'pen') { g.fillStyle = '#fff'; g.fillRect(x - 1, 21, 2, 18); g.fillStyle = col; g.fillRect(x + 1, 22, 13, 8); g.lineWidth = 1.5; g.strokeStyle = '#fff'; g.strokeRect(x + 1.5, 22.5, 12, 7); g.lineWidth = 1; }
     else {
       g.beginPath(); g.moveTo(x, y - 7); g.lineTo(x + 6, y); g.lineTo(x, y + 7); g.lineTo(x - 6, y); g.closePath(); g.fillStyle = col; g.fill(); g.lineWidth = ring ? 2.2 : 1.2; g.strokeStyle = ring || '#000c'; g.stroke();
