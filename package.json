@@ -1,0 +1,8 @@
+{
+  "name": "cow-theft",
+  "version": "1.1.0",
+  "description": "Cow Theft - Capture the Flag mit Kühen, Multiplayer-Shooter",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "dependencies": { "ws": "^8.18.0" }
+}

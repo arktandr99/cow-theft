@@ -1,0 +1,177 @@
+SOUNDS FUER COW THEFT
+=====================
+
+Alle Audiodateien in diesem Ordner werden vom Server ausgeliefert und vom Spiel
+automatisch erkannt (Server neu starten, wenn du Dateien hinzufuegst/umbenennst,
+dann im Browser Strg+F5). Fehlt eine Datei, spielt das Spiel einen synthetischen Ton.
+
+
+1) FESTE DATEIEN (deine eigenen)
+--------------------------------
+mp5 shot.mp3                     Schuss der MP5 (nur noch Reserve, siehe unten)
+reload.mp3                       Magazinwechsel (nur noch Reserve)
+cow-mooing-sound-effect.mp3      Kuh
+sound-of-a-cow-mooing.mp3        Kuh
+
+
+2) AUTOMATISCH ERKANNTE GRUPPEN
+-------------------------------
+Eine Datei gehoert zu einer Gruppe, wenn ihr Name so beginnt (Endung egal:
+.wav, .mp3 oder .ogg). Mehrere Dateien einer Gruppe = Varianten, das Spiel
+waehlt zufaellig. Beispiele: shot_m4a1_1.mp3, imp_dirt_1.wav, imp_dirt_2.wav
+Gehoeren zwei Gruppennamen zu einer Datei (shot_bolt und shot_bolt338), gewinnt der laengere.
+
+WAFFEN (46 Waffen):
+  shot_<waffe>     Schuss genau dieser Waffe, zum Beispiel shot_ak74_1.mp3
+                   (hat Vorrang vor allem anderen; <waffe> = Waffen-ID, siehe Liste unten)
+  shot_<klasse>    Schuss der Klangklasse (nur Reserve), zum Beispiel shot_r556_1.mp3
+  reload_<waffe>   Nachladen genau dieser Waffe (mitgeliefert: reload_deagle, reload_mr73)
+  reload_<klasse>  Nachladen der Klangklasse (siehe Tabelle)
+  (Reihenfolge: Waffe -> Klasse -> alte Rollen-Namen -> synthetischer Ton)
+
+  dry          Leerschuss (Abzug ohne Munition)               mitgeliefert: dry_1..7
+  shellin      Patrone/Schrotpatrone wird eingelegt           mitgeliefert: shellin_1..5
+  bolt         Repetieren (Scharfschuetzengewehre)            mitgeliefert: bolt_1..4
+  pump         Vorderschaft repetieren (Pumpgun)              mitgeliefert: pump_1..2
+  switch       Waffenwechsel                                  keine Datei -> synthetisch
+  magdrop      Magazin faellt zu Boden (doppeltes R)          keine Datei -> synthetisch
+
+KLANGKLASSEN (fuer reload_<klasse>.mp3) und ihre Waffen:
+  r556     m4a1 mk18 m16a4 g36k l85a2 famas
+  r545     ak74 aks74u
+  r762     fal g3a3 mk17 (und Magazin-Schrotflinten)
+  r762s    akm rpk
+  sup      asval honeybadger (schallgedaempft)
+  lmg556   m249                          lmg762   m60e4 pkm mg3
+  bolt     m24 mosin                     bolt338  tac338          amr  m82a1
+  dmr      svd m110 mk14 garand
+  smg9     mp5a5 mp5a2 uzi sterling      smg45    vector m3       pdw  mp7 p90
+  sg       m870 toz194 ksg usas12        sgh      ks23
+  pistol9  makarov m9 pf940              pistol45 m1911
+  magnum   deagle mr73
+
+ALLGEMEIN:
+  step_grass   Schritt auf Gras/Erde/Acker
+  step_road    Schritt auf Strasse, Dorfplatz, Hof und Gehege-Vorplatz (hart)
+  step_wet     Schritt im Teich (Wasser)
+  imp_dirt     Geschoss schlaegt in die Erde ein (Platschen)
+  imp_thud     dumpfer Aufschlag, wird unter Erde und Koerper gemischt
+  imp_wood     Einschlag in Hauswand oder Baumstamm
+  imp_flesh    Einschlag in einen Koerper (neben dir)
+  whiz         Geschoss fliegt an deinem Kopf vorbei (Zischen)
+  crack        Ueberschallknall beim Vorbeiflug (nur bei knapp 0-4 m)
+
+Waffen-IDs (fuer shot_<id> / reload_<id>): m4a1 mk18 m16a4 g36k l85a2 famas ak74 akm aks74u asval
+honeybadger fal g3a3 mk17 m249 m60e4 pkm mg3 rpk m24 mosin tac338 m82a1 svd m110 mk14 garand mp5a5
+mp5a2 mp7 uzi vector p90 m3 sterling m870 toz194 ksg usas12 ks23 makarov m9 m1911 pf940 deagle mr73
+
+Schussdateien: nur den Schuss (inklusive kurzem Nachhall), kein Nachladen.
+Das Spiel kuerzt auf hoechstens 2,5 Sekunden. Die Lautstaerken sind in den Dateien bereits
+aufeinander abgestimmt (Gewehre laut, Pistolen/MPs etwas leiser, Schalldaempfer leise).
+Ist eine Waffe zu laut oder leise: Datei mit einem Audioprogramm anpassen
+oder in index.html bei "const SND_GAIN = {};" einen Faktor eintragen, z. B. { pistol9: 1.2 }.
+
+
+3) ECHTE AUFNAHMEN: WELCHE WAFFE KLINGT WIE WAS (shot_<waffe>_1..3.mp3)
+------------------------------------------------------------------------
+Quelle aller Schuesse, Nachlade- und Mechanikgeraeusche: "The Free Firearm Sound Library"
+(Still North Media, CC0 = gemeinfrei), Kopie auf GitHub: github.com/buddingmonkey/FreeFirearmsSFXLibrary
+Die Aufnahmen sind echte Schuesse bei Mikrofonabstand "nah" und "mittel", Stereo -> Mono,
+einzeln ausgeschnitten, auf passende Lautstaerke gebracht, als MP3 gespeichert.
+
+  m4a1 mk18 m16a4 g36k l85a2 famas   AR-15 (.223/5.56). Unterschiede nur ueber Tonhoehe (0,94 bis 1,06)
+                                      und leichte Klangfilter.
+  m249                                AR-15, tiefer, kurz abgeschnitten
+  ak74 aks74u                         AK-47 (7.62x39), hoeher gestimmt (5.45 ist spitzer)
+  akm rpk                             AK-47 (rpk etwas tiefer)
+  fal g3a3 mk17 m110 mk14 garand      .30-06-Aufnahmen: Springfield 1917 und Tikka T3
+  m60e4 mg3                           wie oben, tiefer/kurz fuer Dauerfeuer
+  pkm svd mosin                       Mosin-Nagant (7.62x54R) - mosin und pkm/svd echt bzw. nah dran
+  m24                                 Tikka T3 (.30-06)
+  tac338 m82a1                        Mosin/Springfield/Tikka stark nach unten gestimmt + Bass
+                                      (ABGELEITET: es gibt keine .338/.50-Aufnahme in der Bibliothek)
+  mp5a5 mp5a2 uzi sterling            Carl Gustav M45 (9 mm Maschinenpistole); uzi/sterling dumpfer
+  mp7 p90                             PPSh-41 bzw. Carl Gustav, nach oben gestimmt (ABGELEITET)
+  vector m3                           Colt 1911 (.45), m3 dumpfer
+  m1911                               Colt 1911 (.45), echt
+  makarov m9 pf940                    Bersa .380 bzw. Walther PPQ (9 mm)
+  mr73                                Smith & Wesson 642 (.38 Revolver), etwas tiefer
+  deagle                              1911 + S&W 642, stark nach unten gestimmt (ABGELEITET)
+  m870 toz194 ksg usas12              Mossberg, Winchester Model 12, Benelli Nova, Charles Daly (alles 12/70)
+  ks23                                Model 12 / Mossberg, tief gestimmt (ABGELEITET)
+  asval honeybadger                   Schallgedaempfte .22-Pistole (Marvel), tiefer gestimmt (ABGELEITET)
+
+Nachladen (reload_<klasse>.mp3, reload_deagle, reload_mr73): aus echten Einzelgeraeuschen der Bibliothek
+zusammengesetzt - Magazin raus, Magazin rein, Verschluss/Schlitten (AR-15, AK-47, Colt 1911, Walther PPQ,
+Carl Gustav, Tikka T3, S&W 642). Das Tempo passt das Spiel automatisch an die Nachladezeit an.
+Leerschuss, Patrone einlegen, Repetieren, Pumpen: ebenfalls echte Einzelgeraeusche (1911, Mosin, Savage,
+Tikka, Mossberg, Winchester, Charles Daly, Carl Gustav, PPSh).
+
+Durchladen beim Nachladen: Ist noch eine Patrone im Lauf, wird nur das Magazin gewechselt (kuerzer). Ist die Waffe leergeschossen,
+kommt am Ende das Durchladen dazu (Spannhebel / Schlitten): dafuer spielt das Spiel nach dem Magazingeraeusch eine Verschluss-
+Aufnahme (bolt_1..4, bei Pistolen zwei synthetische Klicks) passend zugeschnitten ab. Eigene Dateien sind dafuer nicht noetig.
+
+Die alten Klassen-Schussdateien shot_<klasse>_N.mp3 (z. B. shot_r556_1.mp3) werden nicht mehr benoetigt
+und koennen geloescht werden; ebenso shot_sturm/scharf/hirte (alte Rollennamen).
+
+
+4) HERKUNFT UND LIZENZ DER UEBRIGEN DATEIEN
+-------------------------------------------
+imp_dirt_1..6.wav   Einschlag-Geraeusche (Erde, Aufschlag, Holz, Koerper): selbst
+imp_thud_1..3.wav   synthetisiert (scharfer Knall mit schnellem Anstieg, kaum
+imp_wood_1..5.wav   Bass), damit Einschlaege nicht mehr matschig klingen. Die
+imp_flesh_1..3.wav  frueheren CC0-Aufnahmen (Mud SFX, Kenney Impact Sounds) waren
+                    zu dumpf. Wer sie zurueckhaben will: Quellen github.com/
+                    lavenderdotpet/CC0-Public-Domain-Sounds und kenney.nl.
+
+step_grass_1..17.wav  Schritte Gras/Erde (10x Kenney RPG, 5x Kenney Gras, 2x rubberduck), weich gefiltert
+step_road_1..9.wav    Schritte harter Boden (5x Kenney Beton, 4x Brassline/Kenney; Brassline:
+                      github.com/blakelassman/brassline, aus Kenney-Material, CC0)
+step_wet_1..3.wav     Schritte im Wasser ("100 CC0 SFX #2" von rubberduck, OpenGameArt, CC0)
+
+Die Kuh-, MP5- und Reload-Dateien (Abschnitt 1) hast du selbst hinzugefuegt - achte bei
+diesen auf deren eigene Lizenz, falls du das Spiel weitergibst.
+
+Eigenes Geraeusch gewuenscht? Datei mit dem passenden Namen in diesen Ordner legen
+(zum Beispiel shot_ak74_1.wav), Server neu starten, Browser Strg+F5.
+
+HINWEISE ZU DEN MITGELIEFERTEN SCHUSS-DATEIEN (neu)
+  Die 138 Dateien shot_<waffe>_1..3.mp3 haben jetzt je nach Kaliber eine zusaetzliche
+  Bass-Schicht (Sub-Wumms): Pistolen wenig, Sturmgewehre etwas, Maschinengewehre,
+  Scharfschuetzen-, Magnum- und Schrotflinten deutlich, Anti-Material-Gewehr am meisten.
+  Die Lautstaerke wurde angeglichen (Begrenzer), damit der Bass nicht uebersteuert.
+
+NAHKAMPF: Die Mistgabel hat bewusst KEINE eigenen Dateien. Der Stich wird synthetisch
+  erzeugt (Luftzug + dumpfer Einstich), ein Treffer mischt zusaetzlich imp_flesh dazu.
+
+5) UMGEBUNGSGERAEUSCHE (Voegel, Grillen)
+----------------------------------------------
+Werden direkt im Spiel erzeugt (keine Dateien noetig): Gezwitscher aus verschiedenen
+Richtungen in Baumhoehe, selten Kuckuck und Kraehe und Grillen im Gras (kein Wind).
+Bei Schuessen in der Naehe verstummen die Voegel einige Sekunden. Die Lautstaerke
+steht im Code (AMB_BIRD_GAP = Pausen, in chirp() die Gesamtlautstaerke).
+
+6) GRANATEN
+----------------------------------------------
+grenade-explosion-14-190266.mp3  -> Explosion der Splittergranate (Schalllaufzeit nach Entfernung,
+                                    ferne Explosionen etwas dumpfer)
+gas-grenade-95255.mp3            -> Rauchgranate (Plopp und Zischen, ca. 8 s)
+Die Dateinamen stehen oben im Code (SAMPLE_FILES: boom und gas). Fehlt eine Datei, spielt
+das Spiel den synthetischen Ersatzton.
+
+Grenade Pin Tossed Into Leaves.mp3 -> Sicherungsstift ziehen: spielt sofort, sobald G gedrueckt wird
+                                    (Granate "kochen"). Fehlt die Datei, klickt ein synthetischer Ersatz.
+                                    Der Zuender laeuft ab dem Stiftziehen (3,6 s). Loslassen = werfen.
+
+7) GLAS (Fenster in Wohnhaeusern)
+----------------------------------------------
+Fenster sind offen/durchsichtig: Man sieht und schiesst hindurch. Die Glasscheibe geht beim
+ersten Treffer (Kugel, Granate, Explosion in <10 m) kaputt; die Kugel fliegt weiter.
+Ohne Dateien klirrt ein synthetischer Ton. Eigene Geraeusche: Dateien glass_1.mp3, glass_2.mp3 ...
+(oder .wav) in diesen Ordner legen, Server neu starten, Browser Strg+F5.
+Scherben liegen nur als Effekt; zerbrochenes Glas bleibt bis zur naechsten Runde/Karte kaputt.
+
+8) SONSTIGES (neu)
+----------------------------------------------
+Q beim Sanitaeter laesst ein Medkit fallen, Q beim MG-Schuetzen eine Munitionskiste (aufnehmbar).
+Quad: Gegner ab ca. 25 km/h ueberfahren (Schaden steigt mit Tempo, ab ca. 42 km/h toedlich).
