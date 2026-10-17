@@ -1443,6 +1443,45 @@ function addBoltHandle(b, z, o = {}) {
   b.sph(o.knob || 0.0105, o.knobCol || 0x2a2c30, (o.reach || 0.040) + 0.004, (o.drop === undefined ? -0.014 : o.drop) - 0.002, z + 0.028, 1, 1, 1, 12);      // Kugelknauf
   b.use(g0);
 }
+// Feuerwahlhebel als eigener, beweglicher Teil (Gruppe "sel"). p = [x, y, z]: Drehpunkt an der Gehäusewand (x = Wandfläche, x < 0 = linke Seite).
+// kind "lever": Drehscheibe mit Hebelarm, der bei Winkel 0 nach oben zeigt; positive Winkel kippen ihn nach hinten (Drehung um die Querachse).
+// kind "ak": langer Wählhebel der AK-Familie auf dem Sicherungsblech (rechts); Drehpunkt vorn, positive Winkel senken das hintere Ende (unten = Einzelfeuer, Mitte = Dauerfeuer).
+// ang: Winkel je Feuermodus in Bogenmaß (s Einzelfeuer, b Feuerstoß, a Dauerfeuer). Der Hebel fährt zur Stellung des gewählten Modus (selPose).
+const SEL_ANG = { s: -0.5, b: 0.9, a: 1.9 };
+const S_AR = { p: [-0.0167, -0.030, 0.064], len: 0.024 }, S_AK = { kind: 'ak', p: [0.0184, 0.003, 0.113], len: 0.042 }, S_MP5 = { p: [-0.0172, -0.038, 0.062], len: 0.028 }, S_LMG = { p: [-0.026, -0.012, 0.080], len: 0.030, r: 0.0075 };
+const SELX = {
+  m4a1: S_AR, mk18: S_AR, m16a4: S_AR, honeybadger: S_AR, mp5a5: S_MP5, mp5a2: S_MP5,
+  ak74: S_AK, akm: S_AK, aks74u: S_AK, asval: S_AK, rpk: S_AK,
+  g3a3: { p: [-0.020, -0.003, 0.070], len: 0.030, r: 0.0075 }, fal: { p: [-0.019, 0.0, 0.065], len: 0.026, r: 0.0075 }, mk17: { p: [-0.020, 0.0, 0.070], len: 0.026 },
+  m249: S_LMG, m60e4: S_LMG, pkm: S_LMG, mg3: S_LMG,
+  g36k: { p: [-0.018, -0.034, 0.012], len: 0.022 }, l85a2: { p: [-0.022, -0.030, 0.060], len: 0.022 }, famas: { p: [-0.022, -0.035, 0.060], len: 0.022 },
+  vector: { p: [-0.021, -0.040, 0.075], len: 0.022 }, usas12: { p: [-0.026, -0.022, 0.050], len: 0.024 }, mp7: { p: [-0.018, -0.005, 0.070], len: 0.020 },
+  uzi: { p: [-0.023, -0.011, 0.060], len: 0.022 }, mk14: { p: [-0.020, -0.015, 0.060], len: 0.024 }
+};
+function addSel(b, U, o) {
+  const { STL } = WC, g0 = b.grp, px = o.p[0], py = o.p[1], pz = o.p[2], s = px < 0 ? -1 : 1, k = o.kind || 'lever';
+  b.use('sel');
+  if (k === 'ak') {
+    const L = o.len || 0.042, cx = px + s * 0.0013;
+    b.cylX(0.0034, 0.0044, STL, cx, py, pz, 8);                                          // Drehpunkt (Niet)
+    b.box(0.0022, 0.0070, L, 0x23252a, cx + s * 0.0004, py, pz + L / 2);                 // Hebelblech nach hinten
+    b.box(0.0034, 0.0125, 0.0100, 0x2e3035, cx + s * 0.0010, py, pz + L - 0.004);        // Daumenfläche am hinteren Ende
+  } else {
+    const r = o.r || 0.0066, L = o.len || 0.024, cx = px + s * 0.0012;
+    b.cylX(r, 0.0050, STL, cx, py, pz, 12);                                              // Drehscheibe (sitzt 1,3 mm in der Wand)
+    b.box(0.0034, L, 0.0044, STL, cx + s * 0.0024, py + L / 2, pz);                      // Hebelarm
+    b.box(0.0050, 0.0075, 0.0095, 0x3a3d42, cx + s * 0.0026, py + L, pz);                // Daumenfläche
+  }
+  b.use(g0);
+  U.selP = [px, py, pz]; U.selK = k; U.selA = Object.assign({}, k === 'ak' ? { a: 0, s: 0.42, b: 0.2 } : SEL_ANG, o.ang || null);
+}
+// Hebel zur Stellung des Feuermodus drehen. Ohne dt (oder dt = 0) springt er sofort hin, sonst fährt er in ca. 0,15 s.
+function selPose(U, mode, dt) {
+  if (!U || !U.sel || !U.selA) return;
+  const A = U.selA, t = A[mode] !== undefined ? A[mode] : (A.s !== undefined ? A.s : 0);
+  if (U.selV === undefined || !(dt > 0)) U.selV = t; else U.selV += (t - U.selV) * Math.min(1, dt * 16);
+  U.sel.rotation.x = U.selV;
+}
 // Patronengurt (MG): Kasten-Magazin mit sichtbarem Gurt wird in den Waffen selbst gebaut
 
 const WGEO = {}, WGLOSS = new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 34, specular: 0x2c2c2c });
@@ -1472,6 +1511,7 @@ function defineWeapon(id) {
   const b = new MB(0.045);
   const U = { muzzle: -0.5, grip: [0, -0.12, 0.065], fore: [0, -0.045, -0.26], sightY: 0.05, eject: [0.02, 0.01, -0.02], pump: false, mag: false, bolt: false, vg: null, tp: [0, 0] };
   fn(b, U);
+  if (SELX[id]) addSel(b, U, SELX[id]);                                  // beweglicher Feuerwahlhebel
   const G = b.build(); rigData(G, U);
   return { G, U };
 }
@@ -1515,14 +1555,16 @@ const fireDur = W => Math.max(0.05, Math.min(0.13, ((W && W.rate) || 0.1) * 0.9)
 const fmHold = (fm, now, at, em, emptyNow) => !!(fm && fm.lk && (now - at < 0.35 ? em : emptyNow));
 function buildWeapon(id) {
   if (!WDEF[id]) { const W = WT && WT[id], fb = { ar: 'm4a1', br: 'fal', lmg: 'm249', dmr: 'svd', snp: 'm24', smg: 'mp5a5', sg: 'm870', pst: 'm9' }; id = (W && fb[W.cat]) || 'm4a1'; }
-  const D = WGEO[id] || (WGEO[id] = defineWeapon(id)), g = new THREE.Group(), U = Object.assign({}, D.U, { pump: null, mag: null, bolt: null, ch: null });
+  const D = WGEO[id] || (WGEO[id] = defineWeapon(id)), g = new THREE.Group(), U = Object.assign({}, D.U, { pump: null, mag: null, bolt: null, ch: null, sel: null });
   const mk = geo => new THREE.Mesh(geo, WGLOSS);
   g.add(mk(D.G.main));
   if (D.G.mag) { const m = new THREE.Group(); m.add(mk(D.G.mag)); g.add(m); U.mag = m; }
   if (D.G.pump) { const p = new THREE.Group(); p.add(mk(D.G.pump)); g.add(p); U.pump = p; }
   if (D.G.bolt) { const p = new THREE.Group(); p.add(mk(D.G.bolt)); g.add(p); U.bolt = p; }
   if (D.G.ch) { const p = new THREE.Group(); p.add(mk(D.G.ch)); g.add(p); U.ch = p; }       // Spanngriff / Schlitten: wird beim Durchladen nach hinten gezogen
+  if (D.G.sel && U.selP) { const p = new THREE.Group(), m = mk(D.G.sel); m.position.set(-U.selP[0], -U.selP[1], -U.selP[2]); p.position.set(U.selP[0], U.selP[1], U.selP[2]); p.add(m); g.add(p); U.sel = p; }   // Feuerwahlhebel: dreht um seinen Drehpunkt
   U.wid = id; g.userData = U;
+  { const W0 = WT && WT[id]; if (U.sel) selPose(U, W0 && W0.modes ? W0.modes[0] : 's'); }
   return g;
 }
 
@@ -1536,7 +1578,7 @@ function akGun(b, U, o) {
   b.prof([[-0.122, 0.0355], [0.120, 0.0355], [0.190, 0.029], [0.190, 0.012], [-0.122, 0.012]], 0.032, 0x34373c, 0, 0, 0, 0.003);
   b.box(0.0016, 0.0016, 0.30, 0x1a1b1e, 0.0166, 0.0345, 0.04); for (const z of [-0.07, 0.01, 0.09, 0.15]) b.box(0.034, 0.0018, 0.003, 0x1a1b1e, 0, 0.0368, z);   // Deckelrippen
   b.prof([[-0.110, -0.030], [0.060, -0.030], [0.060, -0.066], [-0.110, -0.066]], 0.036, 0x2a2c31, 0, 0, 0, 0.003);                              // Magazinschacht
-  b.box(0.0016, 0.034, 0.145, 0x4a4d52, 0.0176, 0.000, 0.080); b.box(0.0016, 0.007, 0.040, 0x2a2c31, 0.0182, 0.003, 0.135);                       // Sicherungsblech (rechts)
+  b.box(0.0016, 0.034, 0.145, 0x4a4d52, 0.0176, 0.000, 0.080); // Sicherungsblech (rechts); der Wählhebel darauf ist ein eigenes bewegliches Teil (SELX)
   b.use('ch'); b.cylX(0.0046, 0.014, STL, 0.0235, 0.0235, 0.034, 8); b.box(0.0055, 0.0095, 0.016, STL, 0.0295, 0.0235, 0.034); b.use('main');                                // Spanngriff
   b.cylY(0.0052, 0.012, STL, 0, 0.032, 0.196, 8); for (const z of [-0.088, 0.17]) for (const sx of [-1, 1]) b.sph(0.0036, STL, sx * 0.0172, 0.0, z, 1, 1, 1, 6);   // Führungsstift, Nieten
   stdTrigger(b, -0.012, 0);
@@ -1605,7 +1647,7 @@ function ar15(b, U, o = {}) {
   b.box(0.012, 0.008, 0.026, 0x45484f, 0, 0.0275, 0.124); b.use('main');
   b.cylX(0.0036, 0.0365, STL, 0, -0.026, 0.118, 8); b.cylX(0.0036, 0.0365, STL, 0, -0.025, -0.097, 8);                                           // Verbindungsbolzen
   b.cylX(0.0055, 0.006, STL, 0.0185, -0.038, 0.026, 8);                                                                                          // Magazinhalter
-  b.box(0.003, 0.018, 0.006, STL, -0.0185, -0.042, 0.003); b.cylX(0.006, 0.004, STL, -0.0185, -0.03, 0.064, 8); b.box(0.003, 0.004, 0.026, STL, -0.0195, -0.03, 0.074, 0.5); // Verschlussfang, Feuerwahlhebel
+  b.box(0.003, 0.018, 0.006, STL, -0.0185, -0.042, 0.003); // Verschlussfang (der Feuerwahlhebel ist ein eigenes bewegliches Teil, siehe SELX)
   if (carry) {                                                                                                                                    // Tragegriff mit Visier
     b.prof([[-0.050, 0.030], [0.118, 0.030], [0.121, 0.058], [0.112, 0.078], [-0.022, 0.078], [-0.052, 0.060]], 0.022, 0x2c2e33, 0, 0, 0, 0.003,
       [[[-0.036, 0.036], [0.088, 0.036], [0.092, 0.056], [0.082, 0.069], [-0.012, 0.069], [-0.042, 0.056]]]);
@@ -1619,7 +1661,7 @@ function ar15(b, U, o = {}) {
     b.prof([[0.135, 0.020], [0.20, 0.025], [0.30, 0.028], [0.42, 0.031], [0.442, 0.027], [0.448, -0.094], [0.434, -0.102], [0.36, -0.082], [0.28, -0.062], [0.22, -0.046], [0.135, -0.032]], 0.037, 0x34373c, 0, 0, 0, 0.004); // A2-Schaft
     b.prof([[0.434, 0.032], [0.456, 0.028], [0.461, -0.100], [0.434, -0.098]], 0.040, RUB, 0, 0, 0, 0.002);                                       // Gummikappe
     b.box(0.036, 0.0035, 0.07, 0x23252a, 0, 0.0285, 0.35);                                                                                          // Klappe Schaftfach (Optik)
-    b.tor(0.006, 0.0014, STL, 0, -0.080, 0.40, 0, Math.PI / 2, 0);
+    b.tor(0.006, 0.0014, STL, 0, -0.0985, 0.40, 0, Math.PI / 2, 0);
   } else {
     b.prof([[0.135, 0.018], [0.20, 0.024], [0.29, 0.026], [0.334, 0.020], [0.338, -0.066], [0.326, -0.074], [0.28, -0.060], [0.22, -0.044], [0.135, -0.030]], 0.036, 0x383b41, 0, 0, 0, 0.003); // Teleskopschaft
     b.prof([[0.334, 0.022], [0.349, 0.020], [0.356, -0.076], [0.340, -0.074]], 0.038, RUB, 0, 0, 0, 0.002);                                      // Schaftkappe
@@ -1676,7 +1718,6 @@ def('g3a3', (b, U) => {
   b.prof([[-0.060, -0.026], [0.055, -0.026], [0.055, -0.062], [-0.060, -0.062]], 0.034, 0x2a2c31, 0, 0, 0, 0.003);                                  // Magazinschacht
   b.cylX(0.0055, 0.010, STL, -0.0235, -0.040, 0.050, 8);                                                                                             // Magazinhalter
   b.use('ch'); b.cyl(0.0068, 0.17, STL, -0.0225, 0.0185, -0.20, 10); b.box(0.014, 0.014, 0.034, 0x42464c, -0.0295, 0.0185, -0.135); b.use('main');                              // Spanngriff links (Rohr + Hebel)
-  b.cylX(0.0075, 0.005, STL, -0.0225, -0.003, 0.070, 10); b.box(0.004, 0.005, 0.032, STL, -0.0255, -0.003, 0.082, 0.3);                              // Wählhebel
   addMagazine(b, { z: -0.0, y: -0.062, len: 0.20, wid: 0.050, th: 0.025, curve: 0.10, col: 0x5a5e64, plate: 0x1c1d20, rib: 0x15161a });
   stdTrigger(b, 0.0, 0); stdGrip(b, 0.004, 0, OLV, 0.030, 0.008);
   const hg = [[-0.125, 0.024], [-0.372, 0.022], [-0.382, 0.010], [-0.382, -0.034], [-0.368, -0.042], [-0.125, -0.042]];                                // Handschutz (Kunststoff, gerippt)
@@ -1701,7 +1742,6 @@ def('fal', (b, U) => {
   addMagazine(b, { z: -0.0, y: -0.062, len: 0.19, wid: 0.050, th: 0.025, curve: 0.07, col: 0x4a4e54, plate: 0x1c1d20, rib: 0x15161a });
   stdTrigger(b, 0.0, 0); stdGrip(b, 0.002, 0, 0x2c2e33, 0.030, 0.006);
   b.use('ch'); b.box(0.016, 0.012, 0.030, STL, 0.0255, 0.016, -0.04); b.use('main');                                                                                            // Spanngriff rechts
-  b.cylX(0.0075, 0.005, STL, -0.0215, 0.0, 0.065, 10);
   // Griffige Handschützer mit Lüftungsschlitzen, Gasrohr oben, Tragegriff
   b.prof([[-0.135, 0.016], [-0.335, 0.014], [-0.345, 0.004], [-0.345, -0.034], [-0.330, -0.040], [-0.135, -0.040]], 0.047, 0x2b2d32, 0, 0, 0, 0.005);
   for (let i = 0; i < 8; i++) b.box(0.0482, 0.014, 0.012, OIL, 0, -0.012, -0.17 - i * 0.021);
@@ -1724,7 +1764,7 @@ def('mk17', (b, U) => {
   for (const sx of [-1, 1]) for (let i = 0; i < 9; i++) b.box(0.0014, 0.014, 0.0045, 0x0e0f10, sx * 0.0232, -0.002, -0.16 - i * 0.024);
   b.box(0.0215, 0.0045, 0.20, BLK, 0, -0.0385, -0.26); addRailSlots(b, -0.35, -0.16, -0.0412, 0.0165, 0.0105);
   b.box(0.0016, 0.020, 0.052, OIL, 0.0204, 0.006, 0.03);                                                                                            // Auswurf
-  b.cylX(0.0058, 0.008, STL, 0.0205, -0.034, 0.025, 8); b.cylX(0.0064, 0.004, STL, -0.0205, -0.0, 0.070, 10); b.box(0.004, 0.005, 0.026, STL, -0.0225, 0.0, 0.082, 0.4);
+  b.cylX(0.0058, 0.008, STL, 0.0205, -0.034, 0.025, 8); 
   b.use('ch'); b.box(0.012, 0.011, 0.030, BLK, 0.0265, 0.014, -0.05); b.use('main');                                                                                            // Spanngriff (hin- und herbewegt)
   addMagazine(b, { z: -0.0, y: -0.086, len: 0.19, wid: 0.050, th: 0.026, curve: 0.08, col: 0x3a3d42, plate: 0x1c1d20, rib: 0x101113 });
   stdTrigger(b, 0.0, -0.018, 0.007, 0x2c2e33); stdGrip(b, 0.004, -0.026, 0x2f3236, 0.031, 0.010);
@@ -1752,11 +1792,11 @@ def('l85a2', (b, U) => {
   stdTrigger(b, -0.044, 0, 0.007, 0x2c2e33); stdGrip(b, -0.044, 0.002, 0x30343a, 0.030, 0.008);
   b.prof([[-0.215, 0.030], [-0.38, 0.026], [-0.384, -0.026], [-0.215, -0.034]], 0.040, 0x2d3035, 0, 0, 0, 0.006);                                  // Vorderschaft
   for (let i = 0; i < 6; i++) b.box(0.0416, 0.040, 0.004, 0x151618, 0, -0.003, -0.24 - i * 0.022);
-  b.cyl(0.0105, 0.15, STL, 0, 0, -0.44, 12); b.cyl(0.0138, 0.045, 0x24262a, 0, 0, -0.485, 12);                                                     // Lauf + Mündungsfeuerdämpfer
+  b.cyl(0.0105, 0.14, STL, 0, 0, -0.435, 12); b.cyl(0.0138, 0.045, 0x24262a, 0, 0, -0.485, 12);                                                     // Lauf + Mündungsfeuerdämpfer
   for (let i = 0; i < 3; i++) b.box(0.0045, 0.028, 0.026, OIL, 0, 0, -0.49, 0, 0, i * Math.PI / 3); b.disc(0.0042, OIL, 0, 0, -0.5075, -1, 8);
   b.box(0.030, 0.012, 0.040, 0x25272b, 0, -0.030, -0.34);                                                                                           // Gasblock
   addHoodFront(b, -0.405, 0.0105, S);
-  b.tor(0.006, 0.0014, STL, 0, -0.075, 0.30, 0, Math.PI / 2, 0);
+  b.tor(0.006, 0.0014, STL, 0, -0.0835, 0.30, 0, Math.PI / 2, 0);
   Object.assign(U, { muzzle: -0.5085, grip: [0, -0.10, 0.065], fore: [0, -0.025, -0.28], sightY: S, eject: [0.02, 0.014, 0.01], mag: true });
 });
 def('famas', (b, U) => {
@@ -1826,7 +1866,6 @@ function lmg(b, U, o) {
   if (o.ribs) for (let i = 0; i < 9; i++) b.box(0.0504, 0.056, 0.003, shade(rec, 0.7), 0, 0.004, -0.14 + i * 0.036);                                    // Prägerippen
   b.box(0.030, 0.012, 0.060, shade(rec, 1.3), 0, 0.050, -0.165);                                                                                       // Zuführschale vorn
   b.use('ch'); b.cylX(0.0058, 0.012, STL, 0.029, 0.052, 0.050, 8); b.box(0.016, 0.014, 0.036, 0x42464c, 0.0335, 0.052, 0.050); b.use('main');                                     // Spanngriff
-  b.cylX(0.0075, 0.005, STL, -0.0285, -0.012, 0.08, 10); b.box(0.004, 0.005, 0.030, STL, -0.0315, -0.012, 0.092, 0.3);
   stdTrigger(b, 0.0, -0.014, 0.007, 0x2c2e33); stdGrip(b, 0.003, -0.016, o.fur || 0x2c2e33, 0.032, 0.010);
   // Lauf + Mantel
   const mz = o.muz, jz = o.jz || -0.30;
@@ -1912,6 +1951,13 @@ function pst(b, U, o) {
   b.prof(o.frame, o.fw || o.sw - 0.001, o.frameCol, 0, 0, 0, 0.003);                                                   // Rahmen unter dem Schlitten
   pstGuard(b, o.tg[0], o.tg[1], o.tg[2], o.tg[3], o.tg[4], 0x2c2e33);
   pstGrip(b, o);
+  if (!o.plain) {                                                                                                      // Zusatzdetails (nicht beim Makarov)
+    const fx = (o.fw || o.sw - 0.001) / 2, zS = o.tg[4] + 0.012;
+    b.box(0.0030, 0.0042, 0.022, STL, -(fx + 0.0010), o.sB - 0.0035, zS);                                              // Schlittenfang-Hebel (links, liegt am Rahmen an)
+    b.box(0.0034, 0.0070, 0.0065, 0x3b3f46, -(fx + 0.0012), o.sB - 0.0040, zS + 0.012);                                // Daumenauflage des Schlittenfangs
+    const sy = o.gy[0] - 0.016, gz0 = o.gz[0] + 0.016, gz1 = o.gz[1] - 0.014;
+    for (const sx of [-1, 1]) for (const zz of [gz0, gz1]) b.cylX(0.0028, 0.0018, STL, sx * (o.gw / 2 + 0.0003), sy + (zz === gz0 ? 0 : -0.002), zz, 8);   // Griffschrauben
+  }
   b.cylX(0.0050, 0.003, STL, o.sw / 2 - 0.0004 + 0.001, o.gy[0] - 0.006, o.gz[0] + 0.012, 8);                           // Magazinhalter-Knopf
   Object.assign(U, { muzzle: o.sf - 0.0075, grip: [0, o.gy[0] - 0.056, (o.gz[0] + o.gz[1]) / 2 + 0.002 + o.gz[2] * 0.3], fore: [0, -0.05, o.sf + 0.04], sightY: o.S, eject: [o.sw / 2, o.sT - 0.010, o.sr - 0.060], mag: true, noLeft: true, vg: PST_VG });
 }
@@ -1922,7 +1968,7 @@ def('makarov', (b, U) => {
   const o = { sf: -0.081, sr: 0.060, sT: 0.014, sB: -0.012, sw: 0.0196, slideCol: 0x31353b, frameCol: 0x2d3036, bev: 0.0045, S: 0.022, rz: 0.054, fz: -0.072, rw: 0.014, serr: 5,
     gz: [0.012, 0.060, 0.012], gy: [-0.020, -0.120], gw: 0.026, panel: 0x35271c, groove: 0x20170f, grooves: 2, mw: 0.017,
     frame: [[-0.074, -0.012], [0.056, -0.012], [0.058, -0.020], [0.054, -0.026], [0.030, -0.028], [0.008, -0.026], [-0.050, -0.020]],
-    tg: [-0.020, 0.024, -0.024, -0.062, 0.002] };
+    tg: [-0.020, 0.024, -0.024, -0.062, 0.002], plain: true };
   pst(b, U, o);
   b.prof([[0.050, 0.010], [0.062, 0.012], [0.066, 0.002], [0.056, -0.002]], 0.0062, 0x34383e, 0, 0, 0, 0.0016);        // Hahn (ohne Sporn)
   b.box(0.0066, 0.012, 0.014, 0x23262a, -0.0105, -0.011, 0.058);                                                          // Sicherungshebel links
@@ -1992,7 +2038,7 @@ def('deagle', (b, U) => {
     gz: [0.026, 0.094, 0.020], gy: [-0.034, -0.150], gw: 0.0360, panel: 0x1d1e21, groove: 0x0c0d0e, grooves: 5, mw: 0.026,
     frame: [[-0.106, -0.015], [0.090, -0.015], [0.098, -0.024], [0.098, -0.036], [0.040, -0.038], [0.004, -0.036], [-0.040, -0.032], [-0.106, -0.030]],
     tg: [-0.044, 0.028, -0.036, -0.074, 0.003] };
-  pst(b, U, o);
+  pst(b, U, o); U.muzzle = -0.1815; U.fore[2] = -0.12;                                                                   // Mündung vorn am Kompensator (nicht im Lauf)
   b.prof([[-0.172, -0.012], [-0.172, 0.0240], [-0.052, 0.0240], [-0.052, -0.012]], 0.0270, 0x44484f, 0, 0, 0, 0.0035);   // Lauf (kantig)
   b.prof([[-0.172, 0.0240], [-0.052, 0.0240], [-0.052, 0.0285], [-0.168, 0.0285]], 0.0100, 0x24262a, 0, 0, 0, 0.0014);   // Zielschiene
   for (let i = 0; i < 12; i++) b.box(0.0102, 0.0016, 0.0042, 0x08090a, 0, 0.0287, -0.160 + i * 0.0085);                   // Querrillen auf der Schiene
@@ -2150,7 +2196,6 @@ function mp5(b, U, o) {
     [[0.040, -0.057], [0.047, -0.057], [0.043, -0.079], [0.036, -0.075]]);
   b.prof([[0.058, -0.052], [0.108, -0.052], [0.113, -0.078], [0.120, -0.118], [0.126, -0.148], [0.100, -0.151], [0.080, -0.149], [0.075, -0.130], [0.077, -0.114], [0.069, -0.096], [0.067, -0.082], [0.060, -0.068]], 0.031, 0x383b41, 0, 0, 0, 0.0035); // Pistolengriff
   for (let i = 0; i < 4; i++) b.box(0.0316, 0.0024, 0.028, 0x15161a, 0, -0.080 - i * 0.017, 0.096 + i * 0.006);
-  b.cylX(0.0075, 0.012, STL, -0.0225, -0.038, 0.062, 10); b.box(0.004, 0.005, 0.03, STL, -0.0305, -0.038, 0.078, 0.2);                              // Feuerwahlhebel
   // Handschutz mit Rillen, Spanngriff links
   b.prof([[-0.095, 0.022], [-0.252, 0.020], [-0.262, 0.016], [-0.262, -0.030], [-0.254, -0.040], [-0.095, -0.040]], 0.050, o.hg || 0x35383d, 0, 0, 0, 0.007);
   for (let i = 0; i < 5; i++) b.box(0.0524, 0.034, 0.0035, 0x0f1012, 0, -0.006, -0.13 - i * 0.022);
@@ -2282,7 +2327,7 @@ function addBoltStock(b, f0, b1, col, o = {}) {
   const pts = [[f0, 0.002], [-0.095, 0.002], [0.15, -0.004], [0.22, comb], [b1 - 0.02, comb - 0.006], [b1, comb - 0.010], [b1 + 0.004, -0.122], [b1 - 0.012, -0.128], [b1 - 0.10, -0.090], [0.25, -0.064], [0.17, -0.074], [0.14, -0.118], [0.11, -0.146], [0.074, -0.138], [0.040, -0.080], [-0.0, -0.058], [-0.095, -0.054], [f0 + 0.01, -0.050], [f0, -0.036]];
   if (wood) addGrain(b, pts, w, col, 4, 0.0005); else b.prof(pts, w, col, 0, 0, 0, 0.005);
   b.prof([[b1 - 0.014, comb - 0.008], [b1 + 0.014, comb - 0.014], [b1 + 0.018, -0.124], [b1 - 0.010, -0.130]], w + 0.003, WC.RUB, 0, 0, 0, 0.002);                    // Schaftkappe
-  b.tor(0.006, 0.0014, WC.STL, 0, -0.07, b1 - 0.07, 0, Math.PI / 2, 0);
+  b.tor(0.006, 0.0014, WC.STL, 0, -0.106, b1 - 0.07, 0, Math.PI / 2, 0);      // Riemenöse hängt unter der Schaftunterkante
 }
 function boltAction(b, o) {                                                                                                                               // Systemhülse und Verschlussschaft eines Repetierers
   const { STL, OIL, BLK } = WC;
@@ -2310,7 +2355,7 @@ def('mosin', (b, U) => {
   b.cyl(0.0200, 0.18, 0x3a3e44, 0, 0, 0.03, 14); b.box(0.0016, 0.014, 0.050, OIL, 0.0198, 0.008, 0.06);                                                     // Hülse
   b.cyl(0.0172, 0.04, 0x3a3e44, 0, 0, 0.148, 14); b.sph(0.0085, 0x2a2c30, 0, 0, 0.172, 1, 1, 1.4, 10);
   stdTrigger(b, 0.0, 0.004, 0.006, 0x2c2e33);
-  b.cyl(0.0115, 0.68, 0x3a3e44, 0, 0, -0.43, 14); b.cyl(0.0132, 0.006, 0x25272b, 0, 0, -0.752, 14); b.disc(0.0046, OIL, 0, 0, -0.7555, -1, 10);          // langer Lauf
+  b.cyl(0.0115, 0.665, 0x3a3e44, 0, 0, -0.4225, 14); b.cyl(0.0132, 0.006, 0x25272b, 0, 0, -0.752, 14); b.disc(0.0046, OIL, 0, 0, -0.7555, -1, 10);          // langer Lauf
   b.cyl(0.0160, 0.02, 0x2a2c30, 0, 0, -0.745, 14);
   addBoltStock(b, -0.62, 0.38, 0x76492a, { wood: true, comb: 0.012 });                                                                                      // Holzschaft
   b.prof([[-0.098, 0.015], [-0.62, 0.015], [-0.62, 0.004], [-0.098, 0.004]], 0.030, 0x7a4b24, 0, 0, 0, 0.003);                                              // Oberschaft (Handschutz)
@@ -2736,6 +2781,7 @@ function animPlayer(g, d, speed, t, dt) { // Laufanimation (Beine mit Knie), Sit
     const e = u.boltAt ? (t - u.boltAt) / Math.min(0.95, W.rate * 0.85) : 2;
     if (e >= 0 && e < 1) { const Pb = boltPose(e); gu.bolt.rotation.z = Pb[0] * 1.15; gu.bolt.position.z = Pb[1] * 0.075; } else { gu.bolt.rotation.z = 0; gu.bolt.position.z = 0; }
   }
+  if (gu.sel) selPose(gu, d.fm || (W && W.modes ? W.modes[0] : 's'), dt);                      // Feuerwahlhebel anderer Spieler: Modus kommt vom Server (fm), sonst der erste Modus der Waffe
 }
 
 // ---------- Ragdoll-Körperteile aus denselben Modellteilen ----------
@@ -3049,6 +3095,7 @@ function updateViewGun(dt, t, alive) {
   if (!me || !WT) return;
   if (me.w !== vgWid) setViewGun(me.w);
   const W = WT[me.w] || WT.m4a1, U = vg.userData.U, B = U.vg || VG_BASE;
+  if (U.sel) selPose(U, fmodeOf(W), dt);                                                                          // Feuerwahlhebel folgt dem gewählten Feuermodus
   const scopedGun = W.scope > 0, sniperZoom = zoom && scopedGun;
   ads += ((zoom && W.cat !== 'mel' ? 1 : 0) - ads) * Math.min(1, dt * W.ads);                                  // Anlegen beim Zielen (schwere Waffen langsamer)
   const rl = me.rl || 0;
@@ -3562,7 +3609,7 @@ function onSnap(m) {
     if (g && (g.userData.role !== p.r || (g.userData.team !== undefined && g.userData.team !== p.t))) { scene.remove(g); g = null; } // Rollen- oder Teamwechsel: neues Modell
     if (!g) { g = pMesh[p.i] = makePlayer(p.t, p.r, p.i, p.w); shadowize(g, true, true); scene.add(g); g.position.set(p.x, groundY(p.x, p.z), p.z); }
     else if (p.w && g.userData.wid !== p.w) swapGun(g, p.w);          // anderer Spieler hat die Waffe gewechselt
-    g.userData.t = { x: p.x, z: p.z, y: p.y, p: p.q != null ? -0.4 : p.p, rid: p.c !== null || p.q != null, q: p.q == null ? null : p.q, j: p.j || 0, sp: !!p.sp && p.c === null, cr: !!p.cr && p.c === null, pr: !!p.pr, dn: !!p.dn, ln: p.ln || 0, ad: !!p.ad, rl: p.rl || 0, sw: !!p.sw }; g.userData.team = p.t;
+    g.userData.t = { x: p.x, z: p.z, y: p.y, p: p.q != null ? -0.4 : p.p, rid: p.c !== null || p.q != null, q: p.q == null ? null : p.q, j: p.j || 0, sp: !!p.sp && p.c === null, cr: !!p.cr && p.c === null, pr: !!p.pr, dn: !!p.dn, ln: p.ln || 0, ad: !!p.ad, rl: p.rl || 0, sw: !!p.sw, em: p.em || 0, fm: p.fm || '' }; g.userData.team = p.t;
     if (!p.d) removeRagdoll(p.i);                               // wieder am Leben: Puppe weg
     g.visible = !p.d && !ragdolls[p.i] && !(p.cm && p.t !== myTeam && Math.hypot(p.x - pos.x, p.z - pos.z) > 14);   // getarnt im Heu: Gegner sieht man erst ab 14 m
     { const dnT = !!p.dn && p.t === myTeam, mk = g.userData.mark; mk.visible = !!(p.s && p.t !== myTeam); mk.material.color.setHex(0xff2222);   // gespottete Gegner: rote Raute
@@ -5445,7 +5492,7 @@ function loop(t) {
     wasSprint = sprinting;
     if (!down) tryFire(t);
   }
-  if (playing && ws && ws.readyState === 1 && t - lastState > 50) { lastState = t; ws.send(JSON.stringify({ t: 'state', x: pos.x, z: pos.z, yaw: yaw + dzYaw, pitch: Math.max(-1.5, Math.min(1.5, pitch + dzPitch)), ads: zoom, mv: moving, sp: sprinting, cr: crouch ? 1 : 0, pr: prone ? 1 : 0, ln: +leanK.toFixed(2), j: +jy.toFixed(2), qy: +qHead.toFixed(3), qs: +qSpd.toFixed(2) })); }
+  if (playing && ws && ws.readyState === 1 && t - lastState > 50) { lastState = t; ws.send(JSON.stringify({ t: 'state', fm: (me && WT && WT[me.w] && WT[me.w].modes.length > 1) ? fmodeOf(WT[me.w]) : undefined, x: pos.x, z: pos.z, yaw: yaw + dzYaw, pitch: Math.max(-1.5, Math.min(1.5, pitch + dzPitch)), ads: zoom, mv: moving, sp: sprinting, cr: crouch ? 1 : 0, pr: prone ? 1 : 0, ln: +leanK.toFixed(2), j: +jy.toFixed(2), qy: +qHead.toFixed(3), qs: +qSpd.toFixed(2) })); }
   const k = Math.min(1, dt * 12);
   for (const id in pMesh) {
     const g = pMesh[id], d = g.userData.t; if (!d) continue;
