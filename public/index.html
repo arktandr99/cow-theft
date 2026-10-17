@@ -2645,6 +2645,21 @@ function playerGeo(team, role, v) {
     else if (role === 'scharf') for (let i = 0; i < 4; i++) b.box(0.07, 0.05, 0.07, [0x4a5a2a, 0x6b5a34, 0x3a4a22][i % 3], (srnd() - 0.5) * 0.08, -0.05 - i * 0.11, (srnd() - 0.5) * 0.08);
     else if (role === 'sturm' || role === 'mg') b.box(0.012, 0.07, 0.06, shirtD, s * 0.082, -0.12, 0);              // Ärmelpatch
   }
+  // ----- Zweiteilige Arme (Ace-of-Spades-Stil): Oberarm am Schulterpunkt, Unterarm mit Hand am Ellbogen (beide hängen nach -y). Länge 0,30 + 0,375 wie der ganze Arm oben -----
+  for (const s of [-1, 1]) {
+    const sd = s < 0 ? 'L' : 'R';
+    b.use('u' + sd);
+    cube(0.15, 0.3, 0.15, shirt, 0, -0.15, 0, 0.05);                                                                 // Oberarm
+    if (role === 'sani') { b.box(0.162, 0.075, 0.162, WHITE, 0, -0.14, 0); b.box(0.03, 0.04, 0.01, RED, s * 0.083, -0.14, 0); }
+    else if (role === 'scharf') for (let i = 0; i < 2; i++) b.box(0.07, 0.05, 0.07, [0x4a5a2a, 0x6b5a34, 0x3a4a22][i % 3], (srnd() - 0.5) * 0.08, -0.05 - i * 0.11, (srnd() - 0.5) * 0.08);
+    else if (role === 'sturm' || role === 'mg') b.box(0.012, 0.07, 0.06, shirtD, s * 0.082, -0.12, 0);
+    b.use('f' + sd);
+    cube(0.15, 0.15, 0.15, shirt, 0, 0.0, 0, 0.05);                                                                  // Ellbogenblock (verdeckt die Fuge beim Beugen)
+    cube(0.15, 0.225, 0.15, shirt, 0, -0.1125, 0, 0.05);                                                             // Unterarm (Ärmel)
+    cube(0.15, 0.075, 0.15, shirtD, 0, -0.2625, 0, 0.04);                                                            // Bündchen
+    cube(0.15, 0.075, 0.15, glove, 0, -0.3375, 0, 0.05);                                                             // Hand (Handschuh)
+    if (role === 'scharf') for (let i = 0; i < 2; i++) b.box(0.07, 0.05, 0.07, [0x4a5a2a, 0x6b5a34, 0x3a4a22][(i + 1) % 3], (srnd() - 0.5) * 0.08, -0.08 - i * 0.1, (srnd() - 0.5) * 0.08);
+  }
   // ----- Beine: Oberschenkel am Hüftpunkt, Unterschenkel am Knie -----
   for (const s of [-1, 1]) {
     const sd = s < 0 ? 'L' : 'R', mil = role === 'sturm' || role === 'mg' || role === 'scharf';
@@ -2686,8 +2701,9 @@ function makePlayer(team, role, id, wid) {
     legs.push(leg); shins.push(shin);
   }
   for (const x of [-0.38, 0.38]) {                                                                      // Arme zielen nach vorn zur Waffe
-    const arm = new THREE.Group(); arm.position.set(x, 1.5, 0); arm.rotation.order = 'YXZ'; arm.rotation.y = x < 0 ? -0.3 : 0.3; up.add(arm);
-    mkPL(G[x < 0 ? 'aL' : 'aR'], arm); arms.push(arm);
+    const arm = new THREE.Group(); arm.position.set(x, 1.5, 0); arm.rotation.order = 'YXZ'; arm.rotation.y = x < 0 ? -0.3 : 0.3; arm.scale.set(0.75, 1, 0.75); up.add(arm);   // Oberarm (etwas schlanker, damit die Arme die Waffe nicht verdecken)
+    const fore = new THREE.Group(); fore.scale.set(0.75, 1, 0.75); up.add(fore); arm.userData.fore = fore;                                                                   // Unterarm: eigene Gruppe, Lage kommt aus armIK / armSync
+    mkPL(G[x < 0 ? 'uL' : 'uR'], arm); mkPL(G[x < 0 ? 'fL' : 'fR'], fore); arms.push(arm);
   }
   wid = wid || 'm4a1';
   const gun = buildWeapon(wid); gun.userData.gz = gunZ(wid, gun); gun.position.set(0, 1.4, gun.userData.gz); up.add(gun);   // Waffe, neigt sich mit dem Blick
@@ -2711,11 +2727,52 @@ function swapGun(g, wid) {                                          // andere Wa
   u.gun = gun; u.flash = flash; u.wid = wid; u.pumpAt = 0; u.flashAt = 0; u.boltAt = 0; u.fmAt = -9; u.fmEm = false; u.rlLocked = false;
 }
 const _atv = new THREE.Vector3(), _atq = new THREE.Quaternion(), _adn = new THREE.Vector3(0, -1, 0);
+// Zweiteiliger Arm: Oberarm (Gruppe arm) + Unterarm (arm.userData.fore). Die Hand soll auf H (Raum "up") liegen; der Ellbogen knickt nach außen/unten/etwas vorn, damit der Arm nicht in den Körper ragt.
+const ARM_LU = 0.30, ARM_LF = 0.375, _iD = new THREE.Vector3(), _iE = new THREE.Vector3(), _iP = new THREE.Vector3(), _iV = new THREE.Vector3(), _iQ = new THREE.Vector3(), _iR = new THREE.Vector3(), _iT = new THREE.Vector3();
+// Rumpf (Raum "up"): Weste + Taschen. Arme sollen nicht hineinragen -> Ellbogen-Drehung wird so gewählt, dass die Armachsen außerhalb bleiben
+const TORSO = { x: 0.335, zF: -0.205, zB: 0.13, y0: 1.05, y1: 1.62 };
+function armClip(S, E, H) {                                           // Summe der Eindringtiefen von Punkten auf Oberarm (S->E) und Unterarm (E->H) in den Rumpf
+  let c = 0; const r = 0.058;
+  for (let seg = 0; seg < 2; seg++) {
+    const A = seg ? E : S, B = seg ? H : E;
+    for (let i = seg ? 0 : 2; i <= 6; i++) {                          // Oberarm: ohne die ersten 2 Stützpunkte (Schultergelenk steckt ohnehin in der Weste)
+      const t = i / 6, x = A.x + (B[0] !== undefined ? B[0] - A.x : B.x - A.x) * t, y = A.y + (B[1] !== undefined ? B[1] - A.y : B.y - A.y) * t, z = A.z + (B[2] !== undefined ? B[2] - A.z : B.z - A.z) * t;
+      if (y > TORSO.y0 - r && y < TORSO.y1 + r) { const dep = Math.min(TORSO.x + r - Math.abs(x), z - (TORSO.zF - r), TORSO.zB + r - z); if (dep > 0) c += dep; }
+    }
+  }
+  return c;
+}
+function armIK(arm, H, side) {
+  const fo = arm.userData.fore, S = arm.position;
+  _iD.set(H[0] - S.x, H[1] - S.y, H[2] - S.z); const dist = Math.max(1e-3, _iD.length()); _iD.divideScalar(dist);
+  const reach = (ARM_LU + ARM_LF) * 0.998, k = dist > reach ? Math.min(1.25, dist / reach) : 1, lu = ARM_LU * k, lf = ARM_LF * k;
+  const dd = Math.max(Math.abs(lu - lf) + 0.01, Math.min(dist, (lu + lf) * 0.998));
+  const a = (lu * lu - lf * lf + dd * dd) / (2 * dd), hh = Math.sqrt(Math.max(0, lu * lu - a * a));
+  _iP.set(side * 0.45, -1, -0.35); _iP.addScaledVector(_iD, -_iP.dot(_iD));                            // bevorzugte Ellbogenrichtung: nach unten, leicht außen und vorn
+  if (_iP.lengthSq() < 1e-6) _iP.set(side, 0, 0); _iP.normalize();
+  _iQ.crossVectors(_iD, _iP);                                                                            // zweite Achse senkrecht zu Schulter-Hand-Linie und Ellbogenrichtung
+  const ud = arm.userData; let best = 0, bc = 1e9;
+  for (let g = -105; g <= 105; g += 15) {                                                                // Drehung des Ellbogens um die Schulter-Hand-Achse: wenig Eindringen, möglichst nah an der bevorzugten Lage und an der letzten Wahl
+    const ph = g * Math.PI / 180, cs = Math.cos(ph), sn = Math.sin(ph);
+    _iE.set(S.x + _iD.x * a + (_iP.x * cs + _iQ.x * sn) * hh, S.y + _iD.y * a + (_iP.y * cs + _iQ.y * sn) * hh, S.z + _iD.z * a + (_iP.z * cs + _iQ.z * sn) * hh);
+    const cost = armClip(S, _iE, H) * 60 + Math.abs(ph) * 0.35 + Math.abs(ph - (ud.phi || 0)) * 0.25;
+    if (cost < bc) { bc = cost; best = ph; }
+  }
+  ud.phi = (ud.phi || 0) + (best - (ud.phi || 0)) * 0.4;                                                 // weich nachführen (kein Springen des Ellbogens)
+  const cs = Math.cos(ud.phi), sn = Math.sin(ud.phi);
+  _iE.set(S.x + _iD.x * a + (_iP.x * cs + _iQ.x * sn) * hh, S.y + _iD.y * a + (_iP.y * cs + _iQ.y * sn) * hh, S.z + _iD.z * a + (_iP.z * cs + _iQ.z * sn) * hh);
+  _iV.copy(_iE).sub(S).normalize(); arm.quaternion.setFromUnitVectors(_adn, _iV); arm.scale.set(0.75, k, 0.75);
+  fo.position.copy(_iE); _iV.set(H[0] - _iE.x, H[1] - _iE.y, H[2] - _iE.z).normalize(); fo.quaternion.setFromUnitVectors(_adn, _iV); fo.scale.set(0.75, k, 0.75);
+}
+function armSync(arm) {                                              // Arm ohne IK (z. B. Fahrer): Unterarm sitzt starr verlängert am Oberarm
+  const fo = arm.userData.fore; if (!fo) return;
+  _atv.set(0, -ARM_LU * arm.scale.y, 0).applyQuaternion(arm.quaternion); fo.position.copy(arm.position).add(_atv); fo.quaternion.copy(arm.quaternion); fo.scale.copy(arm.scale);
+}
 // Arm (Schulterpunkt S) auf ein Handziel H zeigen lassen (beides im Raum der Gruppe "up"); w = Überblendung zur normalen Armhaltung
 function armTo(arm, S, H, w) {
   _atv.set(H[0] - S.x, H[1] - S.y, H[2] - S.z); const len = _atv.length() || 1; _atv.divideScalar(len);
   _atq.setFromUnitVectors(_adn, _atv); arm.quaternion.slerp(_atq, w);
-  arm.scale.y = 1 + (Math.max(0.7, Math.min(1.4, len / 0.64)) - 1) * w;
+  arm.scale.y = 1 + (Math.max(0.7, Math.min(1.6, len / 0.64)) - 1) * w;
 }
 function toUp(gun, p) { _atv.set(p[0], p[1], p[2]).applyMatrix4(gun.matrix); return [_atv.x, _atv.y, _atv.z]; }   // Punkt der Waffe -> Raum von "up"
 function animPlayer(g, d, speed, t, dt) { // Laufanimation (Beine mit Knie), Sitzhaltung auf der Kuh, Waffe folgt dem Blick; Liegen, Lehnen, Schwimmen, Zielen, Rückstoß, Nachladen
@@ -2743,10 +2800,13 @@ function animPlayer(g, d, speed, t, dt) { // Laufanimation (Beine mit Knie), Sit
   const gu = u.gun.userData, tp = gu.tp || [0, 0];            // tp: Feinabstimmung der Waffenlage in der Fremdansicht (Höhe, Tiefe)
   const kc = u.flashAt ? Math.max(0, 1 - (t - u.flashAt) / 0.12) : 0;                                 // Rückstoß nach dem Schuss
   const pk = prK * Math.PI / 2;
-  const rx = d.p * (1 - u.spK) - u.spK * 0.65 + kc * 0.06 + pk, ry = u.spK * 0.3, dz = (gu.gz !== undefined ? gu.gz : -0.1) + 0.1 + kc * 0.045;   // dz: wie weit die Waffe vor dem Drehpunkt (Schulter) sitzt
-  u.arms.forEach((a, i) => { a.scale.y = 1; a.rotation.set(1.45 + d.p - u.spK * (0.8 + d.p) + kc * 0.05 + prK * (Math.PI / 2 + 0.2) - u.adK * 0.1, i ? 0.3 : -0.3, 0); });
+  // Haltung: Hüfthaltung = Waffe rechts vor dem Körper, leicht nach links eingedreht und gekantet; beim Zielen kommt sie an die Schulter auf Augenhöhe (mittig, gerade). Beide Hände greifen die Waffe (siehe Greifpass weiter unten)
+  const carryK = (1 - u.adK) * (1 - u.spK) * (1 - prK);                                               // 1 = lockere Hüfthaltung, 0 = Zielen / Sprint / Bauchlage
+  const rx = d.p * (1 - u.spK) - u.spK * 0.38 + kc * 0.06 + pk, ry = u.spK * 0.3 + 0.12 * carryK, rzC = 0.08 * carryK, dz = (gu.gz !== undefined ? gu.gz : -0.1) + 0.1 + kc * 0.045;   // dz: wie weit die Waffe vor dem Drehpunkt (Schulter) sitzt
+  const xp = 0.05 - 0.01 * u.adK;                                                                     // Drehpunkt der Waffe: rechte Körperseite, beim Zielen fast mittig (Kimme vor dem rechten Auge)
+  u.arms.forEach((a, i) => { a.scale.set(0.75, 1, 0.75); a.rotation.set(1.45 + d.p - u.spK * (0.8 + d.p) + kc * 0.05 + prK * (Math.PI / 2 + 0.2) - u.adK * 0.1, i ? 0.3 : -0.3, 0); });
   u.gun.rotation.x = rx; u.gun.rotation.y = ry;
-  u.gun.position.set(dz * Math.sin(ry), 1.4 - u.spK * 0.12 + tp[0] + u.adK * 0.04 - dz * Math.cos(ry) * Math.sin(rx), -0.1 + tp[1] + dz * Math.cos(ry) * Math.cos(rx) + prK * 0.2);   // Drehung um die Schulter statt um die Waffenmitte
+  u.gun.position.set(xp + dz * Math.sin(ry), 1.36 - u.spK * 0.02 + tp[0] + u.adK * 0.22 - dz * Math.cos(ry) * Math.sin(rx), -0.06 + 0.05 * u.adK + tp[1] + dz * Math.cos(ry) * Math.cos(rx) + prK * 0.2);   // Drehung um die Schulter (Schaftende nah am Körper bzw. an der Schulter, damit die Arme bis zum Vorderschaft reichen) statt um die Waffenmitte
   // Pumpbewegung der Schrotflinte bei anderen Spielern
   if (gu && gu.pump) gu.pump.position.z = pumpK(u.pumpAt ? t - u.pumpAt : 9) * 0.1;
   if (u.stabAt) { const sk = stabCurve((t - u.stabAt) / 0.45); if (sk) { u.gun.position.z -= sk * 0.3; u.arms.forEach(a => a.rotation.x += sk * 0.35); } else if (t - u.stabAt > 0.5) u.stabAt = 0; }   // Stoß der Mistgabel bei anderen Spielern
@@ -2764,13 +2824,18 @@ function animPlayer(g, d, speed, t, dt) { // Laufanimation (Beine mit Knie), Sit
     gu.lockF = u.rlLocked && FIREMV[gu.wid] ? FIREMV[gu.wid].s / gu.chT : 0;
     P = reloadPose(gu, mode, uu, q, rl === 2, fT, sec, Math.max(0.3, W.rlr || 0.6), rfT);
   }
-  if (u.rlK > 0.02) {
-    u.gun.updateMatrix();
-    const P0 = P ? P.T : (gu.noLeft ? STOW : gu.fore);
-    armTo(u.arms[0], u.arms[0].position, toUp(u.gun, P0), u.rlK);
-    if (P && P.R) armTo(u.arms[1], u.arms[1].position, toUp(u.gun, P.R), u.rlK);
-    u.gun.rotation.z = -0.28 * 0.5 * u.rlK;                                                       // Waffe kippt leicht, damit man Magazin und Hand sieht
-  } else u.gun.rotation.z = 0;
+  u.gun.rotation.z = rzC * (1 - u.rlK) - 0.14 * u.rlK;                                            // Hüfthaltung: leicht gekantet; beim Nachladen kippt die Waffe, damit man Magazin und Hand sieht
+  u.gun.updateMatrix();
+  if (!rid) {                                                                                      // Greifpass: rechte Hand am Pistolengriff, linke am Vorderschaft (Pistolen: beide Hände am Griff); beim Nachladen wandert die linke Hand zum Magazin
+    const gR = gu.grip, gF = gu.noLeft ? [gR[0] - 0.004, gR[1] - 0.012, gR[2] - 0.020] : gu.fore;
+    const HR = toUp(u.gun, gR), HL = toUp(u.gun, gF);
+    if (u.rlK > 0.02) {
+      const P0 = toUp(u.gun, P ? P.T : (gu.noLeft ? STOW : gu.fore)), k = u.rlK;
+      for (let c = 0; c < 3; c++) HL[c] += (P0[c] - HL[c]) * k;
+      if (P && P.R) { const PR = toUp(u.gun, P.R); for (let c = 0; c < 3; c++) HR[c] += (PR[c] - HR[c]) * k; }
+    }
+    armIK(u.arms[1], HR, 1); armIK(u.arms[0], HL, -1);
+  } else u.arms.forEach(armSync);
   if (gu.mag) { if (P && P.held && gu.magH) gu.mag.position.set(P.T[0] - gu.magH[0], P.T[1] - gu.magH[1], P.T[2] - gu.magH[2]); else gu.mag.position.set(0, 0, 0); gu.mag.visible = P ? P.vis : true; }
   if (gu.ch) {                                                                                 // Schlitten / Spanngriff bei anderen Spielern
     const fm = FIREMV[gu.wid];
