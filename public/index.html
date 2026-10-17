@@ -1924,7 +1924,9 @@ function lmg(b, U, o) {
   b.box(bx.w + 0.004, 0.024, 0.012, shade(bc, 0.6), bx.x, bx.y + bx.h / 2 - 0.016, bx.z + bx.d * 0.5 - 0.016);                                         // Verschluss
   const sx0 = bx.x < 0 ? -1 : 0;                                                                                                                        // Gurt vom Kasten nach oben zur Zuführschale
   for (let i = 0; i < 7; i++) { const t = i / 6, yy = bx.y + bx.h / 2 + t * (0.044 - bx.y - bx.h / 2 + 0.0) * 0.9, xx = -0.016 - Math.sin(t * Math.PI) * 0.016 + (bx.x * 0.4) * (1 - t);
-    b.cylX(0.0058, 0.040, BRASS, xx, yy, -0.04 + (i % 2) * 0.0, 8); b.box(0.040, 0.004, 0.0105, 0x6a6e74, xx, yy, -0.04 - 0.0); b.box(0.0045, 0.012, 0.012, 0x3a3d42, xx - 0.020, yy, -0.04); }
+    const zr = -0.04;                                                                                                                                  // Patrone liegt längs der Waffe: Spitze zeigt nach vorn (-Z), Hülse und Gurtglied dahinter
+    b.cyl(0.0058, 0.030, BRASS, xx, yy, zr + 0.006, 8); b.cyl(0.0022, 0.017, 0xb07a44, xx, yy, zr - 0.0165, 8, 0.0056);                               // Hülse + zugespitztes Geschoss (Kupfer)
+    b.box(0.0136, 0.0136, 0.007, 0x6a6e74, xx, yy, zr + 0.001); }
   b.use('main');
   Object.assign(U, { muzzle: mz - 0.0001 + 0.0, grip: [0, -0.108, 0.112], fore: [0, -0.01, o.foreZ || -0.24], sightY: S, eject: [0.026, 0.026, 0.12], mag: true, vg: o.vg || null });
 }
