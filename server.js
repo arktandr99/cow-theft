@@ -163,6 +163,147 @@ const SEED_FIXED = process.env.SEED ? (parseInt(process.env.SEED, 10) >>> 0) : 0
 const newSeed = () => SEED_FIXED || ((Math.floor(Math.random() * 4e9) >>> 0) || 1);
 let WORLD, houses, props, trees, groundY, HMAX, PICK, shootBoxes, treeBoxes, glassPanes = [];       // werden von loadWorld() gesetzt
 const solidBoxes = [], solidCircles = [];                                          // feste Hindernisse für Bots (siehe buildSolids)
+// ---------- Schuss-Hüllen (SHAPES-BEGIN) ----------
+// Jede Hülle ist ein Kasten (x, z, w, d, y, h = Hüllkasten, auch für Vorauswahl und Granaten) und trägt optional eine genaue Form:
+//   sh 'f': Zylinder / Kegelstumpf mit Achse a (0 = x, 1 = y, 2 = z), Punkt c auf der Achse, Achsbereich s0..s1, Radius r0 bei s0 und r1 bei s1
+//   sh 'p': konvexer Körper aus Ebenen n·(p - c) <= k (n ist normiert), z. B. Dachprisma oder Kirchturmspitze
+// So blockiert ein Schuss nur dort, wo auch etwas Sichtbares steht (runde Dinge sind nicht eckig, Brunnen und Wagen haben Lücken).
+const bboxOf = (x0, x1, y0, y1, z0, z1) => ({ x: (x0 + x1) / 2, z: (z0 + z1) / 2, w: x1 - x0, d: z1 - z0, y: y0, h: y1 - y0 });
+function shpFrustum(a, c, s0, s1, r0, r1) {
+  const r = Math.max(r0, r1), lo = [c[0] - r, c[1] - r, c[2] - r], hi = [c[0] + r, c[1] + r, c[2] + r]; lo[a] = s0; hi[a] = s1;
+  return { ...bboxOf(lo[0], hi[0], lo[1], hi[1], lo[2], hi[2]), sh: 'f', a, c, s0, s1, r0, r1 };
+}
+function shpPoly(c, planes, ext) {   // ext = Hüllkasten relativ zu c: [x0, x1, y0, y1, z0, z1]
+  const pl = planes.map(([nx, ny, nz, k]) => { const l = Math.hypot(nx, ny, nz); return [nx / l, ny / l, nz / l, k / l]; });
+  return { ...bboxOf(c[0] + ext[0], c[0] + ext[1], c[1] + ext[2], c[1] + ext[3], c[2] + ext[4], c[2] + ext[5]), sh: 'p', c, pl };
+}
+function rayFrustum(o, d, b) {
+  const a = b.a, p = (a + 1) % 3, q = (a + 2) % 3, op = o[p] - b.c[p], oq = o[q] - b.c[q], vp = d[p], vq = d[q], oa = o[a], va = d[a];
+  let lo = 0, hi = 1e9;
+  if (Math.abs(va) < 1e-9) { if (oa < b.s0 || oa > b.s1) return 1e9; }
+  else { let t1 = (b.s0 - oa) / va, t2 = (b.s1 - oa) / va; if (t1 > t2) { const t = t1; t1 = t2; t2 = t; } lo = Math.max(lo, t1); hi = Math.min(hi, t2); if (lo > hi) return 1e9; }
+  const g = (b.r1 - b.r0) / (b.s1 - b.s0), sr = b.r0 + g * (oa - b.s0);                       // Radius am Startpunkt und Änderung pro Achsenstrecke
+  const A = vp * vp + vq * vq - g * g * va * va, B = op * vp + oq * vq - sr * g * va, C = op * op + oq * oq - sr * sr;   // innen, wenn A t² + 2 B t + C <= 0
+  let best = 1e9; const take = (u0, u1) => { if (u0 <= u1 && u0 < best) best = u0; };
+  if (Math.abs(A) < 1e-12) {
+    if (Math.abs(B) < 1e-12) { if (C <= 0) take(lo, hi); }
+    else { const t = -C / (2 * B); if (B > 0) take(lo, Math.min(hi, t)); else take(Math.max(lo, t), hi); }
+  } else {
+    const disc = B * B - A * C;
+    if (disc < 0) { if (A < 0) take(lo, hi); }
+    else {
+      const sq = Math.sqrt(disc); let ra = (-B - sq) / A, rb = (-B + sq) / A; if (ra > rb) { const t = ra; ra = rb; rb = t; }
+      if (A > 0) take(Math.max(lo, ra), Math.min(hi, rb)); else { take(lo, Math.min(hi, ra)); take(Math.max(lo, rb), hi); }
+    }
+  }
+  return best;
+}
+function rayPoly(o, d, b) {
+  const ox = o[0] - b.c[0], oy = o[1] - b.c[1], oz = o[2] - b.c[2]; let tn = 0, tf = 1e9;
+  for (const [nx, ny, nz, k] of b.pl) {
+    const dn = nx * d[0] + ny * d[1] + nz * d[2], dist = k - (nx * ox + ny * oy + nz * oz);
+    if (Math.abs(dn) < 1e-12) { if (dist < 0) return 1e9; }
+    else { const t = dist / dn; if (dn < 0) { if (t > tn) tn = t; } else if (t < tf) tf = t; if (tn > tf) return 1e9; }
+  }
+  return tn;
+}
+function rayBox(o, d, b) {
+  let tn = 0, tf = 1e9;
+  for (const [a, lo, hi] of [[0, b.x - b.w / 2, b.x + b.w / 2], [1, b.y || 0, (b.y || 0) + b.h], [2, b.z - b.d / 2, b.z + b.d / 2]]) {
+    if (Math.abs(d[a]) < 1e-9) { if (o[a] < lo || o[a] > hi) return 1e9; }
+    else {
+      let t1 = (lo - o[a]) / d[a], t2 = (hi - o[a]) / d[a];
+      if (t1 > t2) [t1, t2] = [t2, t1];
+      tn = Math.max(tn, t1); tf = Math.min(tf, t2);
+      if (tn > tf) return 1e9;
+    }
+  }
+  return b.sh === 'f' ? rayFrustum(o, d, b) : b.sh === 'p' ? rayPoly(o, d, b) : tn;       // Hüllkasten getroffen: bei runden Formen genau nachrechnen
+}
+function inShape(x, y, z, b, R) {   // liegt der Punkt (mit Abstand R) in der Hülle? (Granaten)
+  if (x <= b.x - b.w / 2 - R || x >= b.x + b.w / 2 + R || z <= b.z - b.d / 2 - R || z >= b.z + b.d / 2 + R || y <= b.y - R || y >= b.y + b.h + R) return false;
+  if (b.sh === 'f') {
+    const p = [x, y, z], a = b.a, pp = (a + 1) % 3, qq = (a + 2) % 3, s = p[a];
+    if (s < b.s0 - R || s > b.s1 + R) return false;
+    const rr = Math.max(0, b.r0 + (b.r1 - b.r0) * Math.max(0, Math.min(1, (s - b.s0) / (b.s1 - b.s0)))) + R, dp = p[pp] - b.c[pp], dq = p[qq] - b.c[qq];
+    return dp * dp + dq * dq < rr * rr;
+  }
+  if (b.sh === 'p') { for (const [nx, ny, nz, k] of b.pl) if (nx * (x - b.c[0]) + ny * (y - b.c[1]) + nz * (z - b.c[2]) > k + R) return false; }
+  return true;
+}
+// Satteldach wie im Client (addRoof): zwei dünne Dachplatten (0,14 m) und zwei Giebeldreiecke; darunter ist es hohl, Schüsse treffen nur sichtbare Fläche
+function roofShapes(h) {
+  const top = h.y + h.h, alongX = h.w >= h.d, lu = (alongX ? h.w : h.d) / 2, lv = (alongX ? h.d : h.w) / 2;
+  const rh = 0.4 * Math.min(h.w, h.d) + 0.6 - (h.k === 4 ? 0.7 : 0), ovE = 0.55, ovG = 0.35, th = 0.14, slope = rh / lv, eyRel = -ovE * slope, U = lu + ovG, V = lv + ovE;
+  const mk = (nu, ny, nv, k) => alongX ? [nu, ny, nv, k] : [nv, ny, nu, k];                       // (u = entlang des Firsts, y, v = quer) -> (x, y, z)
+  const ext = (u0, u1, y0, y1, v0, v1) => alongX ? [u0, u1, y0, y1, v0, v1] : [v0, v1, y0, y1, u0, u1];
+  const out = [], c = [h.x, top, h.z], dh = rh - eyRel;
+  for (const sv of [-1, 1]) out.push(shpPoly(c, [
+    mk(0, V, sv * dh, V * rh), mk(0, -V, -sv * dh, -(V * rh - th * V)),                          // Oberseite und Unterseite der Platte
+    mk(0, 0, sv, V), mk(0, 0, -sv, 0), mk(1, 0, 0, U), mk(-1, 0, 0, U)],                         // Traufkante, First, Giebelseiten
+    ext(-U, U, eyRel - th, rh, sv > 0 ? 0 : -V, sv > 0 ? V : 0)));
+  for (const su of [-1, 1]) out.push(shpPoly(c, [
+    mk(su, 0, 0, lu * su * su + 0.04), mk(-su, 0, 0, -lu * su * su + 0.04), mk(0, -1, 0, 0),    // Giebeldreieck: dünne Platte in der Ebene u = su * lu
+    mk(0, lv, rh, lv * rh), mk(0, lv, -rh, lv * rh)],
+    ext(su * lu - 0.04, su * lu + 0.04, 0, rh, -lv, lv)));
+  return { shapes: out, top, rh, lu, alongX };
+}
+function houseShapes(h) {
+  const out = [], top = h.y + h.h;
+  if (!h.e) out.push({ x: h.x, z: h.z, w: h.w, d: h.d, y: h.y0, h: top - h.y0 });
+  else {
+    // begehbares Gebäude: einzelne Wandstücke, ein Sturz über der Tür und die Decke (Schüsse können nur durch die Tür hinein)
+    for (const [x, z, hw, hd, y0, y1] of h.wb) out.push({ x, z, w: hw * 2, d: hd * 2, y: y0, h: y1 - y0 });   // Wandstücke mit Fensteröffnungen (Schüsse gehen durch die Fenster)
+    const [f, ds, dw, dh] = h.dr, sx = [0, 0, 1, -1][f], sz = [1, -1, 0, 0][f], half = (sz !== 0 ? h.d : h.w) / 2, c = half - h.T / 2;
+    out.push(sz !== 0 ? { x: h.x + ds, z: h.z + sz * c, w: dw, d: h.T, y: h.y + dh, h: top - h.y - dh } : { x: h.x + sx * c, z: h.z + ds, w: h.T, d: dw, y: h.y + dh, h: top - h.y - dh });
+    out.push({ x: h.x, z: h.z, w: h.w, d: h.d, y: top - 0.3, h: 0.3 });             // Decke
+  }
+  if (h.k === 3) {                                                                  // Kirche: Turmspitze (vierseitige Pyramide, 9 m hoch)
+    const b = h.w / 2 + 0.14;
+    out.push(shpPoly([h.x, top, h.z], [[0, -1, 0, 0], [9, b, 0, 9 * b], [-9, b, 0, 9 * b], [0, b, 9, 9 * b], [0, b, -9, 9 * b]], [-b, b, 0, 9, -b, b]));
+  } else {
+    const r = roofShapes(h); out.push(...r.shapes);
+    if (h.k === 0) {                                                                // Schornstein (Client: 0,9 m breit, bis 1,1 m über den First, Deckplatte 1,1 m)
+      const qx = r.alongX ? h.x + r.lu * 0.45 : h.x, qz = r.alongX ? h.z : h.z + r.lu * 0.45;
+      out.push(bboxOf(qx - 0.45, qx + 0.45, r.top, r.top + r.rh + 1.0, qz - 0.45, qz + 0.45), bboxOf(qx - 0.55, qx + 0.55, r.top + r.rh + 1.0, r.top + r.rh + 1.15, qz - 0.55, qz + 0.55));
+    }
+  }
+  return out;
+}
+function propShapes(p) {
+  const x = p.x, z = p.z, y = p.y, out = [], box = (x0, x1, y0, y1, z0, z1) => out.push(bboxOf(x0, x1, y0, y1, z0, z1));
+  if (p.k === 'hay') {                                                              // Rundballen: liegender Zylinder (Radius 0,75) entlang der längeren Seite
+    const ax = p.w >= p.d, len = ax ? p.w : p.d;
+    out.push(shpFrustum(ax ? 0 : 2, [x, y + 0.75, z], (ax ? x : z) - len / 2, (ax ? x : z) + len / 2, 0.73, 0.73));
+  } else if (p.k === 'stack') {                                                     // Strohschober: Zylinder (Radius 2,1) mit Kegeldach
+    out.push(shpFrustum(1, [x, 0, z], y - 0.2, y + 1.2, 2.05, 2.05), shpFrustum(1, [x, 0, z], y + 1.2, y + 3.6, 2.15, 0));
+  } else if (p.k === 'silo') {
+    out.push(shpFrustum(1, [x, 0, z], y - 0.3, y + 9, 2.26, 2.26), shpFrustum(1, [x, 0, z], y + 9, y + 10.6, 2.36, 0));
+  } else if (p.k === 'well') {                                                      // Brunnen: Steinring, zwei Pfosten, Balken und Dach; dazwischen ist Luft
+    out.push(shpFrustum(1, [x, 0, z], y - 0.3, y + 1.0, 1.07, 1.07));
+    for (const sg of [-1, 1]) box(x + sg * 0.95 - 0.07, x + sg * 0.95 + 0.07, y, y + 2.3, z - 0.07, z + 0.07);
+    box(x - 1.01, x + 1.01, y + 2.14, y + 2.26, z - 0.06, z + 0.06);
+    out.push(...roofShapes({ x, z, w: 2.6, d: 1.9, y: y + 2.1, h: 0, k: 4 }).shapes);
+  } else if (p.k === 'wagon') {                                                     // Wagen: Boden, zwei Seitenbretter, vier Räder; unter dem Boden und zwischen den Rädern ist frei
+    const ax = p.w >= p.d, len = ax ? p.w : p.d, wd = ax ? p.d : p.w;
+    box(x - p.w / 2, x + p.w / 2, y + 0.5, y + 0.7, z - p.d / 2, z + p.d / 2);
+    for (const sg of [-1, 1]) {
+      const off = sg * (wd / 2 - 0.05);
+      if (ax) box(x - len / 2, x + len / 2, y + 0.7, y + 1.2, z + off - 0.05, z + off + 0.05); else box(x + off - 0.05, x + off + 0.05, y + 0.7, y + 1.2, z - len / 2, z + len / 2);
+    }
+    for (const wl of [-1, 1]) for (const sg of [-1, 1]) {
+      const cx = x + (ax ? wl * (len / 2 - 0.55) : sg * (wd / 2 + 0.05)), cz = z + (ax ? sg * (wd / 2 + 0.05) : wl * (len / 2 - 0.55));
+      out.push(shpFrustum(ax ? 2 : 0, [cx, y + 0.55, cz], (ax ? cz : cx) - 0.07, (ax ? cz : cx) + 0.07, 0.53, 0.53));
+    }
+  } else if (p.k === 'trough') box(x - p.w / 2, x + p.w / 2, y - 0.1, y + 0.61, z - p.d / 2, z + p.d / 2);
+  else if (p.k === 'wood') box(x - p.w / 2, x + p.w / 2, y - 0.2, y + 1.25, z - p.d / 2, z + p.d / 2);
+  return out;                                                                       // Zäune, Bänke, Laternen, Schilder: Schüsse gehen hindurch
+}
+function treeShape(t) {                                                             // nur der Stamm blockiert (Laub nicht); Maße wie im Client
+  const s = t.s, r = [0.28, 0.30, 0.19][t.k] * s, top = [2.4, 3.0, 1.6][t.k] * s;
+  return shpFrustum(1, [t.x, 0, t.z], t.y - 0.3, t.y + top, r, r);
+}
+// (SHAPES-END)
 function loadWorld(seed) {
   const t0 = Date.now();
   WORLD = require('./world')({ PEN, PEN_R, MAP, seed });
@@ -171,20 +312,12 @@ function loadWorld(seed) {
   PICK = WORLD.pick.map(k => ({ ...k, until: 0 }));                                // Aufsammelbare Items: Helm, Schutzweste, Munition (vor den Haustüren)
   // Flächen, die Schüsse und Sicht blockieren: Gebäude (vom Fundament bis zum First der Wand), hohe Gegenstände (Brunnen, Silo, Heu, Holz ...) und Baumstämme
   shootBoxes = [];
-  for (const h of houses) {
-    if (!h.e) { shootBoxes.push({ x: h.x, z: h.z, w: h.w, d: h.d, y: h.y0, h: h.y + h.h - h.y0 }); continue; }
-    // begehbares Gebäude: einzelne Wandstücke, ein Sturz über der Tür und die Decke (Schüsse können nur durch die Tür hinein)
-    const top = h.y + h.h, hh = top - h.y0 + 0.3;
-    for (const [x, z, hw, hd, y0, y1] of h.wb) shootBoxes.push({ x, z, w: hw * 2, d: hd * 2, y: y0, h: y1 - y0 });   // Wandstücke mit Fensteröffnungen (Schüsse gehen durch die Fenster)
-    const [f, ds, dw, dh] = h.dr, sx = [0, 0, 1, -1][f], sz = [1, -1, 0, 0][f], half = (sz !== 0 ? h.d : h.w) / 2, c = half - h.T / 2;
-    shootBoxes.push(sz !== 0 ? { x: h.x + ds, z: h.z + sz * c, w: dw, d: h.T, y: h.y + dh, h: top - h.y - dh } : { x: h.x + sx * c, z: h.z + ds, w: h.T, d: dw, y: h.y + dh, h: top - h.y - dh });
-    shootBoxes.push({ x: h.x, z: h.z, w: h.w, d: h.d, y: top - 0.3, h: 0.3 });             // Decke
-  }
+  for (const h of houses) shootBoxes.push(...houseShapes(h));
   glassPanes = [];                                                                  // Fensterscheiben: das erste Geschoss, das sie trifft, zerstört sie und fliegt weiter
   for (const h of houses) if (h.e && h.gl) for (const g of h.gl) glassPanes.push({ id: glassPanes.length, x: g[0], z: g[1], w: g[2] * 2, d: g[3] * 2, y: g[4], h: g[5], broken: false });
-  for (const p of props) if (WORLD.PROP[p.k][2]) shootBoxes.push({ x: p.x, z: p.z, w: p.w, d: p.d, y: p.y - 0.3, h: p.h + 0.3 });
-  treeBoxes = trees.map(t => ({ x: t.x, z: t.z, w: 0.8, d: 0.8, y: t.y - 0.3, h: 3.3 * t.s }));
-  buildSolids(); buildDoors();
+  for (const p of props) shootBoxes.push(...propShapes(p));
+  treeBoxes = trees.map(treeShape);
+  buildSolids(); buildDoors(); buildNav();
   console.log(`Neue Karte #${WORLD.seed}: ${houses.length} Gebäude, ${trees.length} Bäume, ${WORLD.fields.length} Felder, ${WORLD.farms.length} Höfe (${Date.now() - t0} ms${WORLD.attempts > 1 ? ', ' + WORLD.attempts + ' Versuche' : ''})`);
 }
 
@@ -475,19 +608,6 @@ function addAmmo(p, mags, over) {
 }
 
 // ---------- Trefferberechnung ----------
-function rayBox(o, d, b) {
-  let tn = 0, tf = 1e9;
-  for (const [a, lo, hi] of [[0, b.x - b.w / 2, b.x + b.w / 2], [1, b.y || 0, (b.y || 0) + b.h], [2, b.z - b.d / 2, b.z + b.d / 2]]) {
-    if (Math.abs(d[a]) < 1e-9) { if (o[a] < lo || o[a] > hi) return 1e9; }
-    else {
-      let t1 = (lo - o[a]) / d[a], t2 = (hi - o[a]) / d[a];
-      if (t1 > t2) [t1, t2] = [t2, t1];
-      tn = Math.max(tn, t1); tf = Math.min(tf, t2);
-      if (tn > tf) return 1e9;
-    }
-  }
-  return tn;
-}
 function raySphere(o, d, c, r) {
   const oc = [c[0] - o[0], c[1] - o[1], c[2] - o[2]];
   const tca = oc[0] * d[0] + oc[1] * d[1] + oc[2] * d[2];
@@ -784,7 +904,7 @@ function dropItem(p, type) {
 const BAR_LIFE = +process.env.BAR_LIFE || 75000, CD_SCALE = +process.env.CD_SCALE || 1, BAR_MAX = 3, BAR_LEN = 3.2, BAR_THK = 0.7, BAR_H = 1.15;
 function removeBarricade(b) {
   barricades = barricades.filter(x => x !== b);
-  const i = solidBoxes.indexOf(b.sb); if (i >= 0) solidBoxes.splice(i, 1);
+  const i = solidBoxes.indexOf(b.sb); if (i >= 0) { solidBoxes.splice(i, 1); navBox(b.sb, -1); }
   const j = shootBoxes.indexOf(b.sh); if (j >= 0) shootBoxes.splice(j, 1);
 }
 function placeBarricade(p, now) {
@@ -801,7 +921,7 @@ function placeBarricade(p, now) {
   const mine = barricades.filter(b => b.owner === p.id); if (mine.length >= BAR_MAX) removeBarricade(mine[0]);
   const b = { id: nextBar++, owner: p.id, team: p.team, x: cx, z: cz, w, d, y, h: BAR_H + 0.15, until: now + BAR_LIFE };
   b.sb = { x: cx, z: cz, hw, hd }; b.sh = { x: cx, z: cz, w, d, y, h: b.h };
-  barricades.push(b); solidBoxes.push(b.sb); shootBoxes.push(b.sh);
+  barricades.push(b); solidBoxes.push(b.sb); shootBoxes.push(b.sh); navBox(b.sb, 1);
   return true;
 }
 function ability(p) {
@@ -983,7 +1103,7 @@ function moveNade(n, h) {
   let nx = n.x + n.vx * h, ny = n.y + n.vy * h, nz = n.z + n.vz * h;
   const R = 0.07;
   const hit = b => nx > b.x - b.w / 2 - R && nx < b.x + b.w / 2 + R && nz > b.z - b.d / 2 - R && nz < b.z + b.d / 2 + R && ny > b.y - R && ny < b.y + b.h + R;
-  const inside = (x, y, z, b) => x > b.x - b.w / 2 - R && x < b.x + b.w / 2 + R && z > b.z - b.d / 2 - R && z < b.z + b.d / 2 + R && y > b.y - R && y < b.y + b.h + R;
+  const inside = (x, y, z, b) => inShape(x, y, z, b, R);
   const near = [];
   for (const b of shootBoxes) if (Math.abs(b.x - n.x) < 3 + b.w / 2 && Math.abs(b.z - n.z) < 3 + b.d / 2) near.push(b);
   for (const b of treeBoxes) if (Math.abs(b.x - n.x) < 3 && Math.abs(b.z - n.z) < 3) near.push(b);
@@ -1129,7 +1249,8 @@ function buildSolids() {
     for (const [x, z, hw, hd] of h.wl) solidBoxes.push({ x, z, hw, hd });                    // Wände mit Türöffnung
     for (const f of h.fu) solidBoxes.push({ x: f.x, z: f.z, hw: f.hw, hd: f.hd });          // Möbel
   }
-  for (const p of props) if (WORLD.PROP[p.k][1]) solidBoxes.push({ x: p.x, z: p.z, hw: p.w / 2, hd: p.d / 2 });   // Zäune, Brunnen, Silos, Heu ...
+  const ROUND_PROP = { well: 1.2, stack: 2.1, silo: 2.35 };                                                          // runde Gegenstände blockieren rund (Client: dieselben Werte)
+  for (const p of props) if (WORLD.PROP[p.k][1]) { if (ROUND_PROP[p.k]) solidCircles.push({ x: p.x, z: p.z, r: ROUND_PROP[p.k] }); else solidBoxes.push({ x: p.x, z: p.z, hw: p.w / 2, hd: p.d / 2 }); }   // Zäune, Brunnen, Silos, Heu ...
   solidCircles.push({ x: WORLD.pond.x, z: WORLD.pond.z, r: WORLD.pond.r });                                          // Teich
   PEN.forEach((p, t) => {
     const s = PEN_R * 2, side = (w, d, x, z) => solidBoxes.push({ x: p.x + x, z: p.z + z, hw: w / 2, hd: d / 2 });
@@ -1140,9 +1261,140 @@ function buildSolids() {
     for (let i = 0; i < 3; i++) solidBoxes.push({ x: p.x + (outer < 0 ? -1 : 1) * (PEN_R - 2.5), z: p.z + (i - 1) * 4, hw: 0.6, hd: 0.8 }); // Heuballen
     solidCircles.push({ x: p.x, z: p.z, r: 0.2 });                                      // Fahnenmast
   });
-  for (const t of trees) solidCircles.push({ x: t.x, z: t.z, r: 0.45 });
+  for (const t of trees) solidCircles.push({ x: t.x, z: t.z, r: [0.28, 0.30, 0.19][t.k] * t.s });   // so dick wie der sichtbare Stamm (Client: dieselben Werte)
 }
 
+// ---------- Wegfindung der Bots (NAV-BEGIN) ----------
+// Raster mit 1-m-Zellen über die ganze Karte. Eine Zelle ist gesperrt, wenn ein Bot dort (mit Körperradius) in ein festes Hindernis ragen würde (Häuser, Wände, Möbel, Zäune, Bäume, Teich ...).
+// Raster: Fußgänger (Radius 0,55 m), Reiter auf der Kuh (Radius 1,3 m) und die nackten Hindernisse (Radius 0,1 m, nur für Sichtprüfungen am Start). Türen gelten als offen (Bots öffnen sie im Vorbeigehen); durch jede Tür führt eine freie Gasse.
+// A* sucht den Weg; die Bots folgen den Wegpunkten und kürzen mit Sichtprüfung ab. Sandsack-Mauern tragen sich als bewegliche Sperre ein (navDyn).
+const NAV_C = 1, NAV_RAD = [0.55, 1.3, 0.1], NAV_MAXEXP = 90000, NAV_HEAP = 1 << 19;
+const NAV_N = Math.ceil(2 * MAP / NAV_C) + 1, NAV_O = -MAP, NAV_NN = NAV_N * NAV_N;
+const navSt = [new Uint8Array(NAV_NN), new Uint8Array(NAV_NN), new Uint8Array(NAV_NN)], navDyn = [new Uint8Array(NAV_NN), new Uint8Array(NAV_NN), new Uint8Array(NAV_NN)], navPortFlag = new Uint8Array(NAV_NN);
+const navSeen = new Int32Array(NAV_NN), navClosed = new Int32Array(NAV_NN), navG = new Float32Array(NAV_NN), navPar = new Int32Array(NAV_NN);
+const navHeapI = new Int32Array(NAV_HEAP), navHeapF = new Float32Array(NAV_HEAP);
+const navPortals = new Map();
+let navStamp = 0, navHn = 0, navPopF = 0;
+const navCx = v => { const i = Math.round((v - NAV_O) / NAV_C); return i < 0 ? 0 : i >= NAV_N ? NAV_N - 1 : i; };
+const navCell = (x, z) => navCx(z) * NAV_N + navCx(x);
+const navBlocked = (l, i) => (navSt[l][i] !== 0 && (l === 1 || navPortFlag[i] === 0)) || navDyn[l][i] !== 0;
+function navMarkBox(arr, bx, bz, hw, hd, rad, v) {
+  const x0 = navCx(bx - hw - rad), x1 = navCx(bx + hw + rad), z0 = navCx(bz - hd - rad), z1 = navCx(bz + hd + rad);
+  for (let iz = z0; iz <= z1; iz++) {
+    if (!(Math.abs(NAV_O + iz * NAV_C - bz) < hd + rad)) continue;
+    for (let ix = x0; ix <= x1; ix++) if (Math.abs(NAV_O + ix * NAV_C - bx) < hw + rad) arr[iz * NAV_N + ix] += v;
+  }
+}
+function navMarkCircle(arr, cx, cz, r, rad, v) {
+  const x0 = navCx(cx - r - rad), x1 = navCx(cx + r + rad), z0 = navCx(cz - r - rad), z1 = navCx(cz + r + rad), R = r + rad;
+  for (let iz = z0; iz <= z1; iz++) for (let ix = x0; ix <= x1; ix++) { const dx = NAV_O + ix * NAV_C - cx, dz = NAV_O + iz * NAV_C - cz; if (dx * dx + dz * dz < R * R) arr[iz * NAV_N + ix] += v; }
+}
+function buildNav() {   // nach buildSolids() und buildDoors() aufrufen
+  for (let l = 0; l < 3; l++) { navSt[l].fill(0); navDyn[l].fill(0); }
+  navPortFlag.fill(0); navPortals.clear();
+  const skip = new Set(doors.map(d => d.sb));
+  for (let l = 0; l < 3; l++) {
+    for (const b of solidBoxes) if (!skip.has(b)) navMarkBox(navSt[l], b.x, b.z, b.hw, b.hd, NAV_RAD[l], 1);
+    for (const c of solidCircles) navMarkCircle(navSt[l], c.x, c.z, c.r, NAV_RAD[l], 1);
+  }
+  for (const dr of doors) {                                                         // Gasse durch jede Tür (Mitte der Öffnung), Wegpunkte laufen dort genau in der Türmitte
+    const lat = dr.w >= dr.d ? 'x' : 'z', half = (lat === 'x' ? dr.d : dr.w) / 2 + 1.7;
+    const col = navCx(lat === 'x' ? dr.x : dr.z), a0 = navCx((lat === 'x' ? dr.z : dr.x) - half), a1 = navCx((lat === 'x' ? dr.z : dr.x) + half);
+    for (let a = a0; a <= a1; a++) { const i = lat === 'x' ? a * NAV_N + col : col * NAV_N + a; navPortFlag[i] = 1; navPortals.set(i, { lat, v: lat === 'x' ? dr.x : dr.z }); }
+  }
+}
+function navBox(sb, v) { for (let l = 0; l < 3; l++) navMarkBox(navDyn[l], sb.x, sb.z, sb.hw, sb.hd, NAV_RAD[l], v); }   // bewegliche Sperre (Sandsackmauer) ein- oder austragen
+const navRaw = i => navSt[2][i] !== 0 || navDyn[2][i] !== 0;                    // steht hier wirklich ein Hindernis (ohne Körperradius)?
+function navRawLine(x0, z0, x1, z1) {
+  const dx = x1 - x0, dz = z1 - z0, len = Math.hypot(dx, dz), n = Math.max(1, Math.ceil(len / 0.3));
+  for (let k = 0; k <= n; k++) if (navRaw(navCell(x0 + dx * k / n, z0 + dz * k / n))) return false;
+  return true;
+}
+function navFreeNear(l, i, x, z) {   // nächste freie Zelle zu (x, z); bevorzugt eine, die ohne Wand dazwischen erreichbar ist (der Bot kann dicht an einer Wand stehen)
+  if (!navBlocked(l, i)) return i;
+  const cx = i % NAV_N, cz = (i / NAV_N) | 0; let best = -1, bd = 1e9, any = -1, ad = 1e9;
+  for (let r = 1; r <= 8; r++) {
+    for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+      if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+      const gx = cx + dx, gz = cz + dz; if (gx < 0 || gz < 0 || gx >= NAV_N || gz >= NAV_N) continue;
+      const j = gz * NAV_N + gx; if (navBlocked(l, j)) continue;
+      const d = (NAV_O + gx * NAV_C - x) ** 2 + (NAV_O + gz * NAV_C - z) ** 2;
+      if (d < ad) { ad = d; any = j; }
+      if (d < bd && navRawLine(x, z, NAV_O + gx * NAV_C, NAV_O + gz * NAV_C)) { bd = d; best = j; }
+    }
+    if (best >= 0 && r >= 2) return best;                                                // ein Ring weiter prüfen: eine nähere Zelle könnte knapp dahinter liegen
+    if (r >= 4 && best < 0 && any >= 0) return any;
+  }
+  return best >= 0 ? best : any;
+}
+function navHPush(i, f) { let k = navHn++; while (k > 0) { const p = (k - 1) >> 1; if (navHeapF[p] <= f) break; navHeapF[k] = navHeapF[p]; navHeapI[k] = navHeapI[p]; k = p; } navHeapF[k] = f; navHeapI[k] = i; }
+function navHPop() {
+  const top = navHeapI[0]; navPopF = navHeapF[0]; const n = --navHn;
+  if (n > 0) { const f = navHeapF[n], i = navHeapI[n]; let k = 0; for (;;) { let c = 2 * k + 1; if (c >= n) break; if (c + 1 < n && navHeapF[c + 1] < navHeapF[c]) c++; if (navHeapF[c] >= f) break; navHeapF[k] = navHeapF[c]; navHeapI[k] = navHeapI[c]; k = c; } navHeapF[k] = f; navHeapI[k] = i; }
+  return top;
+}
+const NAV_DX = [1, -1, 0, 0, 1, 1, -1, -1], NAV_DZ = [0, 0, 1, -1, 1, -1, 1, -1];
+function navSeeds(l, x, z) {   // Startzellen: die eigene Zelle, oder (steht der Bot in der Sperrzone dicht an einer Wand) alle freien Zellen in der Nähe, die ohne Wand dazwischen erreichbar sind
+  const i = navCell(x, z); if (!navBlocked(l, i)) return [[i, 0]];
+  const cx = i % NAV_N, cz = (i / NAV_N) | 0, out = [], all = [];
+  for (let dz = -4; dz <= 4; dz++) for (let dx = -4; dx <= 4; dx++) {
+    const gx = cx + dx, gz = cz + dz; if (gx < 0 || gz < 0 || gx >= NAV_N || gz >= NAV_N) continue;
+    const j = gz * NAV_N + gx; if (navBlocked(l, j)) continue;
+    const d = Math.hypot(NAV_O + gx * NAV_C - x, NAV_O + gz * NAV_C - z);
+    all.push([j, d]); if (navRawLine(x, z, NAV_O + gx * NAV_C, NAV_O + gz * NAV_C)) out.push([j, d]);
+  }
+  if (out.length) return out;
+  if (all.length) return all;
+  const j = navFreeNear(l, i, x, z); return j >= 0 ? [[j, 0]] : [];
+}
+function navFind(l, sx, sz, gx, gz, avoid) {   // A*: Liste von Wegpunkten [x, z] oder null
+  const seeds = navSeeds(l, sx, sz), g = navFreeNear(l, navCell(gx, gz), gx, gz); if (!seeds.length || g < 0) return null;
+  const N = NAV_N, gcx = g % N, gcz = (g / N) | 0, stamp = ++navStamp; navHn = 0;
+  for (const [si, sd] of seeds) { navSeen[si] = stamp; navG[si] = sd; navPar[si] = -1; const hx = Math.abs(si % N - gcx), hz = Math.abs(((si / N) | 0) - gcz); navHPush(si, sd + 1.1 * (Math.max(hx, hz) + 0.4142 * Math.min(hx, hz))); }
+  let exp = 0, found = false;
+  while (navHn > 0) {
+    const cur = navHPop(); if (navClosed[cur] === stamp) continue; navClosed[cur] = stamp;
+    if (cur === g) { found = true; break; }
+    if (++exp > NAV_MAXEXP || navHn > NAV_HEAP - 16) return null;
+    const cx = cur % N, cz = (cur / N) | 0, gc = navG[cur];
+    for (let k = 0; k < 8; k++) {
+      const nx = cx + NAV_DX[k], nz = cz + NAV_DZ[k]; if (nx < 0 || nz < 0 || nx >= N || nz >= N) continue;
+      const ni = nz * N + nx; if (navClosed[ni] === stamp || navBlocked(l, ni) || (avoid && avoid.has(ni))) continue;
+      if (k >= 4 && (navBlocked(l, cz * N + nx) || navBlocked(l, nz * N + cx))) continue;                 // keine Ecken schneiden
+      const ng = gc + (k < 4 ? 1 : 1.4142);
+      if (navSeen[ni] !== stamp || ng < navG[ni]) { navSeen[ni] = stamp; navG[ni] = ng; navPar[ni] = cur; const hx = Math.abs(nx - gcx), hz = Math.abs(nz - gcz); navHPush(ni, ng + 1.1 * (Math.max(hx, hz) + 0.4142 * Math.min(hx, hz))); }
+    }
+  }
+  if (!found) return null;
+  const cells = []; for (let c = g; c >= 0; c = navPar[c]) cells.push(c); cells.reverse();
+  return cells.map(c => { let x = NAV_O + (c % N) * NAV_C, z = NAV_O + ((c / N) | 0) * NAV_C; const pf = l === 0 ? navPortals.get(c) : undefined; if (pf) { if (pf.lat === 'x') x = pf.v; else z = pf.v; } return [x, z]; });
+}
+function navLine(l, x0, z0, x1, z1) {   // freie Strecke? An jedem Punkt müssen alle vier umliegenden Zellen frei sein, damit der Körper nicht an Ecken streift
+  const dx = x1 - x0, dz = z1 - z0, len = Math.hypot(dx, dz); if (len < 1e-6) return true;
+  const n = Math.ceil(len / 0.4);
+  for (let k = 0; k <= n; k++) {
+    const fx = (x0 + dx * k / n - NAV_O) / NAV_C, fz = (z0 + dz * k / n - NAV_O) / NAV_C, ix = Math.floor(fx), iz = Math.floor(fz);
+    if (navBlocked(l, navCx(NAV_O + ix * NAV_C) + navCx(NAV_O + iz * NAV_C) * NAV_N) || navBlocked(l, navCx(NAV_O + (ix + 1) * NAV_C) + navCx(NAV_O + iz * NAV_C) * NAV_N) ||
+        navBlocked(l, navCx(NAV_O + ix * NAV_C) + navCx(NAV_O + (iz + 1) * NAV_C) * NAV_N) || navBlocked(l, navCx(NAV_O + (ix + 1) * NAV_C) + navCx(NAV_O + (iz + 1) * NAV_C) * NAV_N)) return false;
+  }
+  return true;
+}
+// Nächster Wegpunkt auf dem Weg zum Ziel (tx, tz) oder null, wenn es keinen Weg gibt (dann gilt die alte Steuerung). Der Weg wird neu gesucht, wenn er alt ist, das Ziel weit gewandert ist oder der Bot festhängt (nv.reset).
+function navNext(p, ai, tx, tz, now, l) {
+  let nv = ai.nav; const moved = nv ? Math.hypot(nv.tx - tx, nv.tz - tz) : 1e9;
+  if (!nv || nv.l !== l || nv.reset || nv.i >= nv.pts.length || now - nv.at > nv.life || moved > 10) {
+    if (nv && nv.l === l && nv.failUntil > now && moved < 6) return null;           // zuletzt kein Weg: nicht in jedem Takt erneut suchen
+    const pts = navFind(l, p.x, p.z, tx, tz, ai.avoid && ai.avoid.until > now ? ai.avoid.set : null);
+    if (!pts) { ai.nav = { l, tx, tz, pts: [], i: 0, at: now, life: 0, failUntil: now + 1200 }; return null; }
+    const lastP = pts[pts.length - 1]; if (Math.hypot(lastP[0] - tx, lastP[1] - tz) < 3 && !navBlocked(l, navCell(tx, tz))) pts.push([tx, tz]);   // zuletzt genau zum Ziel
+    nv = ai.nav = { l, tx, tz, pts, i: 0, at: now, life: 1800 + Math.random() * 700, failUntil: 0, reset: false };
+  }
+  const pts = nv.pts, last = pts.length - 1, reach = l ? 1.6 : 0.9;
+  while (nv.i < last && Math.hypot(pts[nv.i][0] - p.x, pts[nv.i][1] - p.z) < reach) nv.i++;
+  for (let j = Math.min(last, nv.i + 10); j > nv.i; j--) if (navLine(l, p.x, p.z, pts[j][0], pts[j][1])) { nv.i = j; break; }   // so weit vorauslaufen, wie die Sicht frei ist
+  return pts[nv.i];
+}
+// (NAV-END)
 function collide(p, radOv, skip) {   // Kreis (Bot oder fliehende Kuh) aus Rechtecken und Kreisen herausschieben, wie move() im Client
   const rad = radOv || (p.cow !== null ? 1.2 : 0.5);
   const boxOut = (bx, bz, hw, hd) => {
@@ -1326,8 +1578,11 @@ function botThink(p, now) {
     if (dc < 3.4 && now >= ai.mountAt) { ai.mountAt = now + 900; mount(p); if (p.cow === null) ai.cowId = -1; }
   }
   // --- Bewegung ---
-  const w0 = route(p, goal);
-  let wx = w0.x, wz = w0.z;
+  botMove(p, ai, goal, enemy, now, dt);
+}
+// Bewegung eines Bots zum Ziel: Wegfindung (A* um Häuser, Zäune, Bäume), alte Steuerung nur noch als Rückfall, wenn es keinen Weg gibt
+function botMove(p, ai, goal, enemy, now, dt) {
+  let wx = goal.x, wz = goal.z;
   const key = (p.cow !== null ? 'pen' : 'cow' + ai.cowId) + ai.job;
   if (ai.viaKey !== key) { ai.viaKey = key; ai.via = null; ai.viaDone = false; }
   if ((ai.job === 'thief' || p.cow !== null) && !goal.rev) {                     // weite Strecken über einen eigenen Zwischenpunkt (Seitenspur), damit nicht alle durch die Mitte laufen
@@ -1341,8 +1596,14 @@ function botThink(p, now) {
       else { wx = ai.via.x; wz = ai.via.z; }
     }
   }
-  if (ai.esc) { if (now < ai.esc.until && Math.hypot(ai.esc.x - p.x, ai.esc.z - p.z) > 2.5) { wx = ai.esc.x; wz = ai.esc.z; } else ai.esc = null; }   // Ausbruch aus einer Sackgasse (Zaunecke): erst dieses Ziel ansteuern
-  const hx = wx - p.x, hz = wz - p.z, dist = Math.hypot(hx, hz);
+  const viaOn = wx !== goal.x || wz !== goal.z;
+  if (ai.esc) { if (now < ai.esc.until && Math.hypot(ai.esc.x - p.x, ai.esc.z - p.z) > 2.5) { wx = ai.esc.x; wz = ai.esc.z; } else ai.esc = null; }   // Ausbruch aus einer Sackgasse (Rückfall ohne Weg): erst dieses Ziel ansteuern
+  const tx = wx, tz = wz;                                                                // Ziel dieses Takts (Ziel, Zwischenpunkt oder Ausbruchspunkt)
+  const riding = p.cow !== null;
+  const np = ai.esc ? null : navNext(p, ai, tx, tz, now, riding ? 1 : 0);           // nächster Wegpunkt auf dem gefundenen Weg
+  if (np) { wx = np[0]; wz = np[1]; }
+  else if (!ai.esc && !viaOn) { const w0 = route(p, goal); wx = w0.x; wz = w0.z; }  // kein Weg gefunden: alte Torsteuerung der Gehege
+  const hx = wx - p.x, hz = wz - p.z, dist = Math.hypot(hx, hz), gdist = Math.hypot(tx - p.x, tz - p.z);
   const stopAt = goal.cow && p.cow === null ? 3.2 : goal.rev ? 1.6 : 1.2;
   if (Math.hypot(goal.x - p.x, goal.z - p.z) < stopAt) {
     p.moving = false; p.sprint = false;
@@ -1350,21 +1611,27 @@ function botThink(p, now) {
     return;
   }
   let heading = Math.atan2(hz, hx);
-  if (now < ai.detourUntil && !ai.esc) heading += ai.detourDir * 1.1;                      // festgefahren: seitlich ausweichen
-  const riding = p.cow !== null;
-  p.sprint = !riding && !enemy && dist > 12;   // (auch auf dem Weg zu einem Kameraden)
+  if (!np && now < ai.detourUntil && !ai.esc) heading += ai.detourDir * 1.1;             // ohne Weg und festgefahren: seitlich ausweichen
+  p.sprint = !riding && !enemy && gdist > 12;   // (auch auf dem Weg zu einem Kameraden)
   let sp = riding ? 9 : (p.sprint ? 6.2 : 3.6);
   if (now < p.boostUntil && !(riding && p.role === 'sturm')) sp *= 1.6;   // Sturm-Sprint wirkt nicht auf der Kuh
   const step = Math.min(sp * dt, Math.max(dist, 0.2)), ox = p.x, oz = p.z, nx = Math.cos(heading), nz = Math.sin(heading);
   p.x += nx * step; p.z += nz * step; collide(p);
   if (Math.hypot(p.x - ox, p.z - oz) < step * 0.3) ai.stuck++; else ai.stuck = 0;
-  if (ai.stuck > 8 && now >= ai.detourUntil) {
-    ai.detourUntil = now + rnd(900, 1800); ai.detourDir = Math.random() < 0.5 ? -1 : 1; ai.stuck = 0;
-    // Bleibt der Bot immer wieder am selben Hindernis hängen (Zaunecke, Sackgasse), läuft er einen immer weiteren Bogen zu einem Ausweichpunkt
-    ai.escN = now - (ai.escAt || 0) < 15000 ? Math.min(5, (ai.escN || 0) + 1) : 1; ai.escAt = now;
-    if (ai.escN >= 2) {
-      const a = heading + ai.detourDir * (1.0 + 0.45 * ai.escN), len = 9 + 5 * ai.escN;
-      ai.esc = { x: Math.max(-MAP + 8, Math.min(MAP - 8, p.x + Math.cos(a) * len)), z: Math.max(-MAP + 8, Math.min(MAP - 8, p.z + Math.sin(a) * len)), until: now + 2500 + 700 * ai.escN };
+  if (ai.stuck > 8) {
+    ai.stuck = 0;
+    if (np && now - (ai.navStuckAt || 0) > 3500) {                                        // am Weg hängengeblieben (Kuh, Spieler, Sandsäcke): Zelle davor sperren und neu suchen
+      ai.navStuckAt = now; if (ai.nav) ai.nav.reset = true;
+      const set = ai.avoid && ai.avoid.until > now ? ai.avoid.set : new Set(); set.add(navCell(p.x + nx * 1.3, p.z + nz * 1.3)); ai.avoid = { set, until: now + 5000 };
+    } else if (now >= ai.detourUntil) {
+      ai.detourUntil = now + rnd(900, 1800); ai.detourDir = Math.random() < 0.5 ? -1 : 1;
+      // Bleibt der Bot immer wieder am selben Hindernis hängen (Zaunecke, Sackgasse), läuft er einen immer weiteren Bogen zu einem Ausweichpunkt
+      ai.escN = now - (ai.escAt || 0) < 15000 ? Math.min(5, (ai.escN || 0) + 1) : 1; ai.escAt = now;
+      if (ai.escN >= 2) {
+        const a = heading + ai.detourDir * (1.0 + 0.45 * ai.escN), len = 9 + 5 * ai.escN;
+        ai.esc = { x: Math.max(-MAP + 8, Math.min(MAP - 8, p.x + Math.cos(a) * len)), z: Math.max(-MAP + 8, Math.min(MAP - 8, p.z + Math.sin(a) * len)), until: now + 2500 + 700 * ai.escN };
+        if (ai.nav) ai.nav.reset = true;
+      }
     }
   }
   p.yaw = turnTo(p.yaw, yawTo(nx, nz), 8 * dt); p.pitch = turnTo(p.pitch, 0, 2 * dt);
@@ -1457,7 +1724,7 @@ wss.on('connection', (ws, req) => {
   let tok = MSG_BURST, tokAt = Date.now(), drops = 0, dropT = 0;           // Nachrichten-Budget dieser Verbindung
   const joinTimer = setTimeout(() => { if (!p.joined && !p.obs && ws.readyState === 1) ws.close(1008, 'keine Anmeldung'); }, JOIN_TIMEOUT_MS);
   const onMsg = m => {
-    if (p.down && !['state', 'revive', 'giveup', 'loadout', 'join'].includes(m.t)) return;   // Niedergeschossene können nur kriechen
+    if (p.down && !['state', 'revive', 'giveup', 'loadout', 'join', 'vote'].includes(m.t)) return;   // Niedergeschossene können nur kriechen (und am Rundenende mit abstimmen)
     if (m.t === 'join' && m.obs) {                                                                  // Beobachter: schaut nur zu, hat kein Team, keine Figur und zählt nirgends
       p.name = cleanName(m.name, 'Zuschauer'); p.obs = true; p.joined = false; p.dead = true; p.respawnAt = 0; p.ready = false;
       balanceBots(); sendVote(p); send(p, { t: 'obs' });
