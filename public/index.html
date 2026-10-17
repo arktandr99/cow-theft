@@ -62,6 +62,9 @@ body.obs #radio{display:none!important}
 #top{position:absolute;top:8px;width:100%;text-align:center;font-size:22px;text-shadow:0 0 4px #000}
 #bl{position:absolute;bottom:12px;left:12px;font-size:18px;text-shadow:0 0 4px #000;line-height:1.5}
 #log{position:absolute;top:50px;left:12px;font-size:14px;text-shadow:0 0 3px #000}
+#jlog{position:absolute;top:276px;right:12px;max-width:min(300px,40vw);text-align:right;font-size:14px;line-height:1.35;text-shadow:0 0 3px #000}
+#jlog div{width:fit-content;margin:0 0 2px auto;padding:1px 8px;border-radius:4px;background:rgba(0,0,0,.45);animation:jin .25s ease-out}@keyframes jin{from{opacity:0;transform:translateX(14px)}to{opacity:1;transform:none}}
+#jlog .jm{color:#bbb}
 #hint{position:absolute;left:50%;bottom:22%;transform:translateX(-50%);font-size:22px;text-shadow:0 0 5px #000;color:#fc3}
 #cross{position:absolute;left:50%;top:50%;width:6px;height:6px;margin:-3px;border:0;border-radius:50%}
 #mate{position:absolute;left:50%;top:50%;transform:translate(-50%,0);margin-top:56px;font:bold 17px/1.1 system-ui,Arial,sans-serif;letter-spacing:.3px;white-space:nowrap;pointer-events:none;display:none;text-shadow:0 0 3px #000,0 0 3px #000,1px 1px 2px #000,-1px -1px 2px #000}
@@ -170,7 +173,7 @@ body.obs #radio{display:none!important}
 <div id="suppfx"></div>
 <div id="sb"></div>
 <div id="vig"></div>
-<div id="hud"><div id="top"></div><div id="log"></div><div id="cross"></div><div id="mate"></div><div id="hint"></div><div id="bl"></div><div id="ammo"></div><canvas id="cmp" width="560" height="46"></canvas><canvas id="mm" width="240" height="240"></canvas><div id="envhud"></div><div id="radio"></div><div id="cook"><i></i><span></span></div></div>
+<div id="hud"><div id="top"></div><div id="log"></div><div id="jlog"></div><div id="cross"></div><div id="mate"></div><div id="hint"></div><div id="bl"></div><div id="ammo"></div><canvas id="cmp" width="560" height="46"></canvas><canvas id="mm" width="240" height="240"></canvas><div id="envhud"></div><div id="radio"></div><div id="cook"><i></i><span></span></div></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
@@ -1044,6 +1047,7 @@ function onMsg(m) {
   else if (m.t === 'fx') onFx(m);
   else if (m.t === 'imp') onImp(m);
   else if (m.t === 'ev') onEvent(m);
+  else if (m.t === 'jn') addJoinLog(m);
   else if (m.t === 'end') { sEnd(); showEnd(m); }
   else if (m.t === 'voteopts') buildVote(m);
   else if (m.t === 'votes') updateVotes(m.v);
@@ -1093,6 +1097,22 @@ function colorNames(html, c) {
     out += html.slice(from, i) + '<span class="' + TEAM_CLS[tm] + '" data-nm="1">' + en + '</span>'; from = i + en.length;
   }
   return out + html.slice(from);
+}
+// Beitritts-/Austrittsmeldungen: eigene Liste rechts (unter der Minimap), getrennt vom Killfeed; jede Zeile verschwindet nach 9 s
+const joinLines = [];
+function addJoinLog(m) {
+  if (typeof m.n !== 'string' || !m.n) return;
+  const en = LANG === 'en', cls = TEAM_CLS[m.tm] || '';
+  const txt = m.k === 'leave' ? (en ? 'left the game' : 'hat das Spiel verlassen') : (en ? 'joined the game' : 'ist beigetreten');
+  const rec = { html: (m.k === 'leave' ? '− ' : '+ ') + '<span class="' + cls + '" data-nm="1">' + esc(m.n) + '</span> <span class="jm">' + txt + '</span>', t: Date.now() };
+  joinLines.push(rec); if (joinLines.length > 5) joinLines.shift();
+  renderJoinLog(); setTimeout(renderJoinLog, 9100);
+}
+function renderJoinLog() {
+  const now = Date.now(); while (joinLines.length && now - joinLines[0].t > 9000) joinLines.shift();
+  const el = $('jlog'); if (!el) return;
+  const h = joinLines.map(r => '<div>' + r.html + '</div>').join('');
+  if (el._h !== h) { el._h = h; el.innerHTML = h; }
 }
 function addLog(t, c) { logLines.push(colorNames(esc(TR(t)), c)); if (logLines.length > 6) logLines.shift(); $('log').innerHTML = logLines.join('<br>'); }
 

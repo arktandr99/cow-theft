@@ -406,7 +406,7 @@ function radio(p, k, tx, tz) {
 
 function reset(seed) {
   barricades.slice().forEach(removeBarricade);
-  if (seed && !SEED_FIXED && seed !== WORLD.seed) { loadWorld(seed); bc({ t: 'newmap', seed: WORLD.seed }); }
+  if (seed && !SEED_FIXED && seed !== WORLD.seed) { loadWorld(seed); newMapAt = Date.now(); bc({ t: 'newmap', seed: WORLD.seed }); }
   doors.forEach(d => setDoor(d, false));
   rollEnv(); bc(envMsg());   // neue Karte: Clients laden die Seite neu und bekommen die neue Welt
   cows = []; let id = 0;
@@ -1734,6 +1734,7 @@ wss.on('connection', (ws, req) => {
       p.joined = true; p.ready = false; if (phase === 'lobby') lobbyEnd = Math.max(lobbyEnd, Date.now() + 8000);   // Nachzügler bekommen noch etwas Zeit
       spawn(p);
       sendVote(p);
+      announceJoin(p);
     } else if (m.t === 'loadout') { const L = safeLoadout(m.role, m.w1, m.w2); p.nextRole = L.cls; p.next1 = L.w1; p.next2 = L.w2; p.nextNade = safeNade(m.nd); p.nextAtt = safeAtt(m.at); }   // gilt ab dem nächsten Respawn
     else if (m.t === 'laser') { if (p.att === 'laser' && !p.dead) { p.laserOn = p.laserOn === false; send(p, { t: 'msg', x: p.laserOn ? 'Laser an' : 'Laser aus' }); } }   // V: Laser an/aus
     else if (m.t === 'switch') switchTo(p, m.s === 2 ? 2 : (m.s === 1 ? 1 : 0));
@@ -1792,11 +1793,28 @@ wss.on('connection', (ws, req) => {
     clearTimeout(joinTimer); { const c = (ipCount.get(ip) || 1) - 1; if (c > 0) ipCount.set(ip, c); else ipCount.delete(ip); }
     if (p.cow !== null) cows[p.cow].rider = null;
     leaveQuad(p);
+    announceLeave(p);
     delete players[p.id];
     balanceBots();
   });
 });
 
+// Beitritt / Austritt: kurze Meldung an die anderen Spieler (rechts im Bild, getrennt vom Killfeed). Bei einem Kartenwechsel laden alle Clients neu und melden sich wieder an – das ist kein echter Beitritt:
+// Wer innerhalb von 5 s wieder erscheint (Neuladen), wird still wieder eingesetzt, und kurz nach dem Kartenwechsel gibt es gar keine Meldungen.
+const pendingLeave = new Map(); let newMapAt = 0;
+const NEWMAP_QUIET_MS = 40000, LEAVE_DELAY_MS = 5000;
+function announceJoin(p) {
+  const key = p.name.toLowerCase();
+  if (pendingLeave.has(key)) { clearTimeout(pendingLeave.get(key)); pendingLeave.delete(key); return; }
+  if (Date.now() - newMapAt < NEWMAP_QUIET_MS) return;
+  for (const q of Object.values(players)) if (q !== p && !q.bot) send(q, { t: 'jn', k: 'join', n: p.name, tm: p.team });
+}
+function announceLeave(p) {
+  if (!p.joined || p.bot) return;
+  const key = p.name.toLowerCase(), name = p.name, team = p.team;
+  if (pendingLeave.has(key)) clearTimeout(pendingLeave.get(key));
+  pendingLeave.set(key, setTimeout(() => { pendingLeave.delete(key); if (Date.now() - newMapAt < NEWMAP_QUIET_MS) return; bc({ t: 'jn', k: 'leave', n: name, tm: team }); }, LEAVE_DELAY_MS));
+}
 const voteCounts = () => { const c = voteOpts.map(() => 0); for (const q of Object.values(players)) if (!q.bot && q.joined && q.vote >= 0 && q.vote < c.length) c[q.vote]++; return c; };
 const voteMsg = () => ({ t: 'voteopts', opts: voteOpts.map((o, i) => ({ i, seed: o.seed, same: o.seed === WORLD.seed, w: o.w, rgb: o.rgb })), v: voteCounts() });
 function sendVote(p) { if (phase === 'over' && voteOpts.length) send(p, voteMsg()); }
