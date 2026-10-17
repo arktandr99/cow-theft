@@ -4480,10 +4480,10 @@ function updateEnvAudio(dt, t) {
     envAud = { rain: mk('bandpass', 850, 0.3), rainLo: mk('lowpass', 380, 0.6), wind: mk('lowpass', 300, 0.8) };   // Regen: weiches Rauschen (tief gefiltert, kein scharfes Zischen)
   }
   const inK = roomK, rk = ENV.rainK, s = ENV.wS, T = AC.currentTime;
-  envAud.rain.g.gain.setTargetAtTime(0.028 * rk * (1 - 0.8 * inK), T, 0.3);
-  envAud.rainLo.g.gain.setTargetAtTime(0.022 * rk * (1 - 0.6 * inK), T, 0.3);
+  envAud.rain.g.gain.setTargetAtTime(0.009 * rk * (1 - 0.8 * inK), T, 0.3);          // Regen nur leise im Hintergrund
+  envAud.rainLo.g.gain.setTargetAtTime(0.007 * rk * (1 - 0.6 * inK), T, 0.3);
   envAud.wind.fl.frequency.setTargetAtTime(180 + 55 * s, T, 0.4);
-  envAud.wind.g.gain.setTargetAtTime(Math.min(0.14, (0.01 + 0.012 * s) * (1 - 0.6 * inK) * (0.85 + 0.15 * Math.sin(t * 0.7))), T, 0.4);
+  envAud.wind.g.gain.setTargetAtTime(Math.min(0.14, (0.01 + 0.012 * s) * (1 - 0.6 * inK) * (1 - 0.35 * rk) * (0.85 + 0.15 * Math.sin(t * 0.7))), T, 0.4);
   if (revSend) revSend.gain.setTargetAtTime(0.05 + 0.3 * inK + (ENV.wx === 3 ? 0.04 : 0) + 0.03 * ENV.cur.night, T, 0.25);
 }
 function sThunder() {
