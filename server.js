@@ -7,6 +7,13 @@ const MATCH_SECONDS = parseInt(process.env.MATCH_SECONDS, 10) || 15 * 60;   // 1
 const LOBBY_S = process.env.LOBBY_S !== undefined ? Math.max(0, +process.env.LOBBY_S) : 25;   // Warteraum vor jeder Runde (0 = sofort losspielen)
 const VOTE_S = process.env.VOTE_S !== undefined ? Math.max(3, +process.env.VOTE_S) : 25;        // Statistik und Kartenwahl am Rundenende
 const RANK_FILE = process.env.RANK_FILE || path.join(__dirname, 'rangliste.json');                                          // lokale Rangliste (wird automatisch angelegt)
+// Absicherung (alles per Umgebungsvariable änderbar): Obergrenzen gegen Missbrauch und Überlastung
+const MAX_CONN = Math.max(1, parseInt(process.env.MAX_CONN, 10) || 40);              // gleichzeitige Verbindungen (Spieler + Zuschauer)
+const MAX_PER_IP = Math.max(1, parseInt(process.env.MAX_PER_IP, 10) || 12);          // Verbindungen pro Adresse
+const MSG_RATE = +process.env.MSG_RATE || 90, MSG_BURST = +process.env.MSG_BURST || 180;   // erlaubte Nachrichten pro Sekunde je Verbindung (normal: etwa 20-50) und kurzer Spitzenwert
+const MAX_PAYLOAD = 8192;                                                            // größte erlaubte Nachricht des Spielers in Byte (normale Nachrichten sind unter 500 Byte)
+const RANK_MAX = 1000;                                                               // so viele Namen bleiben in der Rangliste
+const JOIN_TIMEOUT_MS = 120000;                                                      // wer sich so lange nicht anmeldet (join), wird getrennt
 const COWS_PER_TEAM = 6;
 const MAP = 280;                                   // Spielfeld: -MAP..+MAP
 const PEN = [{ x: -120, z: 0, s: 1 }, { x: 120, z: -100, s: -1 }, { x: 120, z: 100, s: -1 }]; // Gehege Team 0 (rot) / 1 (blau) / 2 (grün); Lage und Torseite (s = +1: Tor zeigt nach +x) würfelt world.js bei jeder neuen Karte
@@ -301,9 +308,18 @@ function prepareVote() {
 }
 
 // ---------- Rangliste (Datei rangliste.json im Projektordner) ----------
-let RANK = {};
-try { RANK = JSON.parse(fs.readFileSync(RANK_FILE, 'utf8')) || {}; } catch { RANK = {}; }
-function saveRank() { try { const tmp = RANK_FILE + '.tmp'; fs.writeFileSync(tmp, JSON.stringify(RANK, null, 1)); fs.renameSync(tmp, RANK_FILE); } catch (e) { console.log('Rangliste konnte nicht gespeichert werden:', e.message); } }
+let RANK = Object.create(null);                      // ohne Prototyp: ein Name wie "__proto__" kann nichts verändern
+try { Object.assign(RANK, JSON.parse(fs.readFileSync(RANK_FILE, 'utf8')) || {}); } catch { RANK = Object.create(null); }
+delete RANK.__proto__;
+// Namen: nur Buchstaben, Ziffern, Leerzeichen, _ . - (kein HTML, keine Sonderzeichen), höchstens 14 Zeichen
+const cleanName = (v, fb) => {
+  let s = typeof v === 'string' ? v : '';
+  try { s = s.normalize('NFKC'); } catch { /* ungültiger Text */ }
+  s = s.replace(/[^\p{L}\p{N} _.\-]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 14).trim();
+  return !s || /^(__proto__|constructor|prototype|hasOwnProperty|toString)$/i.test(s) ? fb : s;
+};
+function saveRank() { try { const ks = Object.keys(RANK); if (ks.length > RANK_MAX) { ks.sort((a, b) => (RANK[b].pts || 0) - (RANK[a].pts || 0)); for (const k of ks.slice(RANK_MAX)) delete RANK[k]; }   // Rangliste begrenzen (schlechteste fliegen raus)
+    const tmp = RANK_FILE + '.tmp'; fs.writeFileSync(tmp, JSON.stringify(RANK, null, 1)); fs.renameSync(tmp, RANK_FILE); } catch (e) { console.log('Rangliste konnte nicht gespeichert werden:', e.message); } }
 const rankTop = n => Object.values(RANK).sort((a, b) => b.pts - a.pts).slice(0, n).map(r => [r.name, r.rounds, r.wins, r.kills, r.mvps, r.pts]);
 const roundScore = p => Math.round((p.kills || 0) * 10 + (p.dl || 0) * 50 + (p.revives || 0) * 20 + (p.hs || 0) * 3 + (p.dmg || 0) / 10 - (p.deaths || 0) * 3);
 
@@ -350,7 +366,7 @@ function spawn(p) {
   send(p, { t: 'spawn', x: p.x, z: p.z, yaw: p.yaw });
 }
 
-const send = (p, o) => { if (p.ws.readyState === 1) p.ws.send(JSON.stringify(o)); };
+const send = (p, o) => { const w = p.ws; if (!w || w.readyState !== 1) return; if (w.bufferedAmount > 4e6) { try { w.terminate(); } catch { /* schon zu */ } return; } w.send(JSON.stringify(o)); };   // wer Daten nicht abnimmt (4 MB Rückstau), wird getrennt
 const bc = o => Object.values(players).forEach(p => send(p, o));
 // Sound-Ereignis an alle (Position = Spieler, optional überschrieben)
 const ev = (p, k, extra = {}) => bc({ t: 'ev', k, i: p.id, x: p.x, z: p.z, ...extra });
@@ -721,7 +737,7 @@ function shoot(p, dir) {
   const quiet = p.att === 'sup' || !!W.sup;
   scareCows(p.x, p.z, quiet ? 7 : 24, false);                                   // Schalldämpfer scheucht Kühe kaum auf
   if (p.att === 'sup') for (const b of bullets) if (b.owner === p.id && b.born === now) b.dm = 0.92;   // Schalldämpfer: etwas weniger Schaden
-  bc({ t: 'fx', id: first.id, n: W.pel, o: o.map(r1), d: first.d.map(v => +v.toFixed(4)), w: W.id, i: p.id, tm: p.team, s: p.att === 'sup' ? 1 : 0, wx: wax, wz: waz });
+  bc({ t: 'fx', id: first.id, n: W.pel, o: o.map(r1), d: first.d.map(v => +v.toFixed(4)), w: W.id, i: p.id, tm: p.team, s: p.att === 'sup' ? 1 : 0, em: I.cur <= 0 ? 1 : 0, wx: wax, wz: waz });   // em: war es der letzte Schuss? (Schlitten bleibt hinten)
   if (I.cur === 0) startReload(p);                                                 // leer: automatisch nachladen (wenn Ersatz da)
 }
 
@@ -1384,8 +1400,12 @@ function balanceBots() {   // Teams mit Bots auf TEAM_SIZE auffüllen; kommt ein
 // ---------- Netzwerk ----------
 const AUDIO_TYPES = { '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.wav': 'audio/wav' };
 const server = http.createServer((req, res) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff'); res.setHeader('Referrer-Policy', 'no-referrer');
+  if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405, { Allow: 'GET, HEAD' }); return res.end(); }   // nur Lesen erlaubt
+  if ((req.url || '').length > 2000) { res.writeHead(414); return res.end(); }
   let url = '/';
   try { url = decodeURIComponent((req.url || '/').split('?')[0]); } catch { /* ungültige Adresse: wie Startseite behandeln */ }
+  if (url === '/healthz') { res.writeHead(200, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' }); return res.end('ok'); }   // für die Zustandsprüfung des Hosters
   if (url === '/weapons') {                              // Waffentabelle für das Menü (wird vor dem Verbinden geladen)
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' });
     return res.end(JSON.stringify({ ver: 12, weapons: Object.assign({}, WEAPONS, { fork: FORK }), classes: CLASSES, pistols: PISTOLS, cfg: { fastReload: FAST_RELOAD, doubleR: DOUBLE_R_MS, gravity: GRAVITY, dropAfter: DROP_AFTER, maxFlight: MAX_FLIGHT, switchMs: SWITCH_MS } }));
@@ -1409,9 +1429,24 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(data);
   });
 });
-const wss = new WebSocketServer({ server });
+server.keepAliveTimeout = 120000; server.headersTimeout = 125000;   // hinter Proxys (z. B. Render) keine abgebrochenen Verbindungen
+const wss = new WebSocketServer({ server, maxPayload: MAX_PAYLOAD, perMessageDeflate: false });
+const HEARTBEAT_MISS = +process.env.HEARTBEAT_MISS || 4;                 // so viele Herzschlag-Runden (je 25 s) ohne Antwort, dann wird die Verbindung getrennt
+const ipCount = new Map();                                              // Verbindungen je Adresse
+const ipOf = req => (String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || (req.socket && req.socket.remoteAddress) || '?').slice(0, 64);
+setInterval(() => {                                                      // Herzschlag: tote Verbindungen (Netz weg, Tab zu) werden aufgeräumt
+  for (const w of wss.clients) { if (w.isAlive === false && ++w.missed >= HEARTBEAT_MISS) { try { w.terminate(); } catch { /* schon zu */ } continue; } w.isAlive = false; try { w.ping(); } catch { /* schon zu */ } }   // erst nach mehreren verpassten Pongs trennen: langsame oder eingefrorene Browser-Tabs sollen nicht sofort fliegen
+}, 25000);
 
-wss.on('connection', ws => {
+wss.on('connection', (ws, req) => {
+  ws.on('error', () => { /* Fehler einer einzelnen Verbindung (zu große Nachricht, Abbruch) dürfen den Server nicht stoppen */ });
+  const ip = ipOf(req), n = ipCount.get(ip) || 0;
+  if (wss.clients.size > MAX_CONN || n >= MAX_PER_IP) {                   // voll oder zu viele Verbindungen von einer Adresse
+    try { ws.send(JSON.stringify({ t: 'msg', x: 'Server voll – bitte später noch einmal versuchen' })); } catch { /* egal */ }
+    return ws.close(1013, 'voll');
+  }
+  ipCount.set(ip, n + 1);
+  ws.isAlive = true; ws.missed = 0; ws.on('pong', () => { ws.isAlive = true; ws.missed = 0; });
   const counts = PEN.map(() => 0);
   Object.values(players).forEach(q => { if (!q.bot && !q.obs) counts[q.team]++; });   // Teams nach echten Spielern verteilen (Bots füllen auf)
   const p = newPlayer(ws, counts.indexOf(Math.min(...counts)), 'Spieler', false);
@@ -1419,14 +1454,15 @@ wss.on('connection', ws => {
   balanceBots();
   send(p, { t: 'welcome', id: p.id, team: p.team, ver: 17, seed: WORLD.seed, env: { tod: env.tod, wx: env.wx, wd: [+wind.a.toFixed(2), +wind.s.toFixed(1)] }, dor: doors.filter(d => d.open).map(d => d.i), map: MAP, pen: PEN, penR: PEN_R, houses, props, trees, roads: WORLD.roads, plazas: WORLD.plazas, fields: WORLD.fields, pond: WORLD.pond, terrain: WORLD.terrain, gb: glassPanes.filter(g => g.broken).map(g => g.id), pick: PICK.map(k => ({ id: k.id, type: k.type, x: k.x, z: k.z })) });
 
-  ws.on('message', raw => {
-    let m; try { m = JSON.parse(raw); } catch { return; }
+  let tok = MSG_BURST, tokAt = Date.now(), drops = 0, dropT = 0;           // Nachrichten-Budget dieser Verbindung
+  const joinTimer = setTimeout(() => { if (!p.joined && !p.obs && ws.readyState === 1) ws.close(1008, 'keine Anmeldung'); }, JOIN_TIMEOUT_MS);
+  const onMsg = m => {
     if (p.down && !['state', 'revive', 'giveup', 'loadout', 'join'].includes(m.t)) return;   // Niedergeschossene können nur kriechen
     if (m.t === 'join' && m.obs) {                                                                  // Beobachter: schaut nur zu, hat kein Team, keine Figur und zählt nirgends
-      p.name = String(m.name || 'Zuschauer').slice(0, 14); p.obs = true; p.joined = false; p.dead = true; p.respawnAt = 0; p.ready = false;
+      p.name = cleanName(m.name, 'Zuschauer'); p.obs = true; p.joined = false; p.dead = true; p.respawnAt = 0; p.ready = false;
       balanceBots(); sendVote(p); send(p, { t: 'obs' });
     } else if (m.t === 'join' && !p.obs) {
-      p.name = String(m.name || 'Spieler').slice(0, 14);
+      p.name = cleanName(m.name, 'Spieler');
       const L = safeLoadout(m.role, m.w1, m.w2); p.nextRole = L.cls; p.next1 = L.w1; p.next2 = L.w2; p.nextNade = safeNade(m.nd); p.nextAtt = safeAtt(m.at);
       p.joined = true; p.ready = false; if (phase === 'lobby') lobbyEnd = Math.max(lobbyEnd, Date.now() + 8000);   // Nachzügler bekommen noch etwas Zeit
       spawn(p);
@@ -1470,8 +1506,22 @@ wss.on('connection', ws => {
     }
     else if (m.t === 'vote') { if (phase === 'over' && p.joined && Number.isInteger(m.i) && m.i >= 0 && m.i < voteOpts.length) { p.vote = m.i; bc({ t: 'votes', v: voteCounts() }); } }
     else if (m.t === 'giveup') { if (p.down) kill(p, p.downBy !== null && players[p.downBy] ? players[p.downBy] : null, null, null, 'hat aufgegeben'); }
+  };
+  ws.on('message', (raw, isBinary) => {
+    if (isBinary) return;
+    const now = Date.now(); tok = Math.min(MSG_BURST, tok + (now - tokAt) * MSG_RATE / 1000); tokAt = now;
+    if (tok < 1) {                                                         // zu viele Nachrichten: verwerfen, bei Dauerfeuer trennen
+      if (now - dropT > 10000) { drops = 0; dropT = now; }
+      if (++drops > 600) ws.close(1008, 'zu viele Nachrichten');
+      return;
+    }
+    tok--;
+    let m; try { m = JSON.parse(raw); } catch { return; }
+    if (!m || typeof m !== 'object' || Array.isArray(m)) return;           // "null", Zahlen, Listen: ignorieren (früher stürzte der Server dabei ab)
+    try { onMsg(m); } catch (err) { console.log('Fehler bei Nachricht', String(m.t).slice(0, 20), '-', err && err.message); }   // eine kaputte Nachricht darf nie den Server stoppen
   });
   ws.on('close', () => {
+    clearTimeout(joinTimer); { const c = (ipCount.get(ip) || 1) - 1; if (c > 0) ipCount.set(ip, c); else ipCount.delete(ip); }
     if (p.cow !== null) cows[p.cow].rider = null;
     leaveQuad(p);
     delete players[p.id];
@@ -1566,7 +1616,7 @@ setInterval(() => {
   reviveTick(now);
   stepNades(now);
   stepBullets(now);
-  const pl = Object.values(players).filter(p => !p.obs).map(p => ({ i: p.id, n: p.name, t: p.team, x: p.x, z: p.z, y: p.yaw, p: p.pitch, h: Math.round(p.hp), d: p.dead ? 1 : 0, c: p.cow, q: p.quad, j: +(p.jy || 0).toFixed(2), sp: p.sprint ? 1 : 0, cr: p.crouch ? 1 : 0, pr: p.prone ? 1 : 0, rd: p.ready ? 1 : 0, jn: p.joined ? 1 : 0, dn: p.down ? 1 : 0, rv: p.down ? +(p.rev || 0).toFixed(2) : 0, ln: p.lean || 0, ad: p.ads ? 1 : 0, la: p.att === 'laser' && p.slot === 0 && !p.melee && !p.dead && !p.down ? (p.laserOn === false ? 2 : 1) : 0, rl: p.rl ? (p.rl.tube ? 3 : (p.rl.fast ? 2 : 1)) : 0, sw: swimming(p) ? 1 : 0, b: now < p.boostUntil && !(p.role === 'sturm' && p.cow !== null) ? 1 : 0, s: now < p.spotUntil ? 1 : 0, r: p.role, w: p.melee ? 'fork' : p.inv[p.slot].w, k: p.kills, de: p.deaths, cm: camOf(p, now) ? 1 : 0 }));
+  const pl = Object.values(players).filter(p => !p.obs).map(p => ({ i: p.id, n: p.name, t: p.team, x: p.x, z: p.z, y: p.yaw, p: p.pitch, h: Math.round(p.hp), d: p.dead ? 1 : 0, c: p.cow, q: p.quad, j: +(p.jy || 0).toFixed(2), sp: p.sprint ? 1 : 0, cr: p.crouch ? 1 : 0, pr: p.prone ? 1 : 0, rd: p.ready ? 1 : 0, jn: p.joined ? 1 : 0, dn: p.down ? 1 : 0, rv: p.down ? +(p.rev || 0).toFixed(2) : 0, ln: p.lean || 0, ad: p.ads ? 1 : 0, em: !p.melee && p.inv[p.slot] && p.inv[p.slot].cur <= 0 ? 1 : 0, la: p.att === 'laser' && p.slot === 0 && !p.melee && !p.dead && !p.down ? (p.laserOn === false ? 2 : 1) : 0, rl: p.rl ? (p.rl.tube ? 3 : (p.rl.fast ? 2 : 1)) : 0, sw: swimming(p) ? 1 : 0, b: now < p.boostUntil && !(p.role === 'sturm' && p.cow !== null) ? 1 : 0, s: now < p.spotUntil ? 1 : 0, r: p.role, w: p.melee ? 'fork' : p.inv[p.slot].w, k: p.kills, de: p.deaths, cm: camOf(p, now) ? 1 : 0 }));
   const cw = cows.map(c => [c.id, c.pen, +c.x.toFixed(1), +c.z.toFixed(1), +c.yaw.toFixed(2), c.tr != null ? 2 : c.rider !== null ? 1 : 0, c.tr != null ? c.tr : -1, c.tr != null ? c.slot : 0]);
   for (let i = drops.length - 1; i >= 0; i--) if (now >= drops[i].until) drops.splice(i, 1);
   const dr = drops.map(d => [d.id, d.type === 'med' ? 0 : 1, +d.x.toFixed(1), +d.z.toFixed(1), d.team, d.uses]);
@@ -1588,4 +1638,6 @@ setInterval(() => {
 loadWorld(newSeed());
 reset(null);
 balanceBots();
+process.on('uncaughtException', e => console.log('Unerwarteter Fehler (Server läuft weiter):', e && e.stack || e));
+process.on('unhandledRejection', e => console.log('Unerwarteter Fehler (Server läuft weiter):', e && e.stack || e));
 server.listen(PORT, () => console.log(`Cow Theft läuft auf http://localhost:${PORT}  (KI-Spieler pro Team: bis ${TEAM_SIZE})`));
