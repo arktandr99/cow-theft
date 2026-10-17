@@ -1576,7 +1576,7 @@ function akGun(b, U, o) {
   // Gehäuse (gestanzt) + Staubdeckel
   b.prof([[-0.130, 0.030], [0.185, 0.030], [0.200, 0.024], [0.200, -0.030], [-0.130, -0.030]], 0.034, 0x2e3035, 0, 0, 0, 0.0025);
   b.prof([[-0.122, 0.0355], [0.120, 0.0355], [0.190, 0.029], [0.190, 0.012], [-0.122, 0.012]], 0.032, 0x34373c, 0, 0, 0, 0.003);
-  b.box(0.0016, 0.0016, 0.30, 0x1a1b1e, 0.0166, 0.0345, 0.04); for (const z of [-0.07, 0.01, 0.09, 0.15]) b.box(0.034, 0.0018, 0.003, 0x1a1b1e, 0, 0.0368, z);   // Deckelrippen
+  b.box(0.0016, 0.0016, 0.20, 0x1a1b1e, 0.0166, 0.0345, 0.02); for (const z of [-0.07, 0.01, 0.09, 0.15]) b.box(0.034, 0.0018, 0.003, 0x1a1b1e, 0, 0.0368, z);   // Deckelrippen
   b.prof([[-0.110, -0.030], [0.060, -0.030], [0.060, -0.066], [-0.110, -0.066]], 0.036, 0x2a2c31, 0, 0, 0, 0.003);                              // Magazinschacht
   b.box(0.0016, 0.034, 0.145, 0x4a4d52, 0.0176, 0.000, 0.080); // Sicherungsblech (rechts); der Wählhebel darauf ist ein eigenes bewegliches Teil (SELX)
   b.use('ch'); b.cylX(0.0046, 0.014, STL, 0.0235, 0.0235, 0.034, 8); b.box(0.0055, 0.0095, 0.016, STL, 0.0295, 0.0235, 0.034); b.use('main');                                // Spanngriff
@@ -1746,7 +1746,7 @@ def('fal', (b, U) => {
   b.prof([[-0.135, 0.016], [-0.335, 0.014], [-0.345, 0.004], [-0.345, -0.034], [-0.330, -0.040], [-0.135, -0.040]], 0.047, 0x2b2d32, 0, 0, 0, 0.005);
   for (let i = 0; i < 8; i++) b.box(0.0482, 0.014, 0.012, OIL, 0, -0.012, -0.17 - i * 0.021);
   b.prof([[-0.135, 0.036], [-0.30, 0.036], [-0.30, 0.016], [-0.135, 0.016]], 0.030, 0x2b2d32, 0, 0, 0, 0.004);
-  b.cyl(0.0085, 0.26, STL, 0, 0.030, -0.28, 10); b.cyl(0.0154, 0.028, 0x2a2c31, 0, 0.0, -0.365, 12);                                               // Gasrohr + Gasblock
+  b.cyl(0.0085, 0.215, STL, 0, 0.030, -0.2575, 10); b.cyl(0.0154, 0.028, 0x2a2c31, 0, 0.0, -0.365, 12); b.box(0.012, 0.020, 0.018, 0x2a2c31, 0, 0.0185, -0.362);   // Gasrohr endet am Gasblock (Halter verbindet beides)                                               // Gasrohr + Gasblock
   b.cyl(0.0115, 0.20, STL, 0, 0, -0.41, 12); b.cyl(0.0135, 0.048, 0x2a2c31, 0, 0, -0.525, 12);
   for (let i = 0; i < 6; i++) b.box(0.0045, 0.028, 0.0066, OIL, 0, 0, -0.51 - i * 0.008, 0, 0, i * Math.PI / 6); b.disc(0.0042, OIL, 0, 0, -0.5495, -1, 8);
   b.prof([[-0.145, 0.034], [-0.15, 0.054], [-0.20, 0.062], [-0.25, 0.054], [-0.255, 0.034]], 0.012, 0x2a2c31, 0, 0, 0, 0.002);                       // Tragegriff (Bügel)
@@ -1837,6 +1837,7 @@ def('g36k', (b, U) => {
   for (let i = 0; i < 3; i++) b.box(0.0045, 0.026, 0.026, OIL, 0, 0, -0.42, 0, 0, i * Math.PI / 3); b.disc(0.0042, OIL, 0, 0, -0.433, -1, 8);
   addHoodFront(b, -0.335, 0.0105, S, 0x23252a);
   addApertureSight(b, 0.150, 0.0745, S, { rO: 0.0075, rI: 0.0042, baseW: 0.012, baseD: 0.018, earH: 0.014, stem: 0.006 });
+  b.prof([[0.196, 0.026], [0.222, 0.022], [0.222, -0.040], [0.196, -0.036]], 0.040, 0x2d3034, 0, 0, 0, 0.004);                                       // Schaftgelenk hinten am Gehäuse: nimmt die Streben auf
   for (const sx of [-1, 1]) { b.limb([sx * 0.016, 0.014, 0.205], [sx * 0.016, 0.008, 0.40], 0.0036, 0.0036, 0x35383e, 8); b.limb([sx * 0.016, -0.030, 0.205], [sx * 0.016, -0.036, 0.40], 0.0036, 0.0036, 0x35383e, 8); b.limb([sx * 0.016, 0.010, 0.396], [sx * 0.016, -0.040, 0.408], 0.0036, 0.0036, 0x35383e, 8); }
   b.prof([[0.396, 0.016], [0.412, 0.012], [0.418, -0.058], [0.398, -0.056]], 0.040, WC.RUB, 0, 0, 0, 0.002);                                         // Klappschaft ausgeklappt
   Object.assign(U, { muzzle: -0.434, grip: [0, -0.10, 0.108], fore: [0, -0.02, -0.22], sightY: S, eject: [0.02, 0.012, 0.03], mag: true });
@@ -4439,28 +4440,35 @@ function applyLook() {
   }
   if (waterMat) { waterMat.uniforms.uSun.value.set(SUN[0], SUN[1], SUN[2]); waterMat.uniforms.uSky.value.setRGB(L.hor[0], L.hor[1], L.hor[2]); }
 }
-// Regen: Striche in einem Würfel um die Kamera, fallen schräg mit dem Wind; im Haus aus
-let rainMesh = null; const RAIN_N = 1500, rainP = new Float32Array(RAIN_N * 3);
+// Regen: Striche in der Welt (feste Weltkoordinaten, nur der Würfel um die Kamera wird recycelt - der Regen läuft also nicht mit der Sicht mit); in Häusern fallen keine Tropfen, draußen sieht man ihn durch Fenster und Türen weiter
+let rainMesh = null; const RAIN_N = 1500, rainP = new Float32Array(RAIN_N * 3), RAIN_R = 28, RAIN_H = 24;
 function buildRain() {
-  for (let i = 0; i < RAIN_N; i++) { rainP[i * 3] = (Math.random() - 0.5) * 56; rainP[i * 3 + 1] = Math.random() * 24; rainP[i * 3 + 2] = (Math.random() - 0.5) * 56; }
+  for (let i = 0; i < RAIN_N; i++) { rainP[i * 3] = (Math.random() - 0.5) * 2 * RAIN_R; rainP[i * 3 + 1] = Math.random() * RAIN_H; rainP[i * 3 + 2] = (Math.random() - 0.5) * 2 * RAIN_R; }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(RAIN_N * 6), 3));
   rainMesh = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0xb9c6da, transparent: true, opacity: 0.42, depthWrite: false, fog: false }));
   rainMesh.frustumCulled = false; rainMesh.visible = false; rainMesh.renderOrder = 5; rainMesh.userData.noShadow = true; scene.add(rainMesh);
 }
+const wrapR = (v, c) => c + ((((v - c) + RAIN_R) % (2 * RAIN_R)) + 2 * RAIN_R) % (2 * RAIN_R) - RAIN_R;   // v in den Würfel um c falten (Weltkoordinate bleibt sonst unverändert)
 function updateRain(dt) {
   if (!rainMesh) return;
   ENV.rainK += (ENV.cur.rain - ENV.rainK) * Math.min(1, dt * 0.8);
-  const show = ENV.rainK > 0.03 && roomK < 0.5 && !!camera; rainMesh.visible = show; if (!show) return;
+  const show = ENV.rainK > 0.03 && !!camera; rainMesh.visible = show; if (!show) return;
   const n = Math.max(60, Math.floor(RAIN_N * Math.min(1, ENV.rainK))), a = rainMesh.geometry.attributes.position.array;
   const vx = Math.cos(ENV.wA) * ENV.wS * 0.55, vz = Math.sin(ENV.wA) * ENV.wS * 0.55, vy = -17;
-  rainMesh.position.set(camera.position.x, groundY(camera.position.x, camera.position.z), camera.position.z);
+  const cx = camera.position.x, cz = camera.position.z, gY = groundY(cx, cz);
+  rainMesh.position.set(0, 0, 0);
+  const near = []; for (const h of houses) if (Math.abs(h.x - cx) < RAIN_R + h.w / 2 + 2 && Math.abs(h.z - cz) < RAIN_R + h.d / 2 + 2) near.push(h);   // Häuser im Regenwürfel
   for (let i = 0; i < n; i++) {
     let x = rainP[i * 3] + vx * dt, y = rainP[i * 3 + 1] + vy * dt, z = rainP[i * 3 + 2] + vz * dt;
-    if (y < 0) { y += 24; x = (Math.random() - 0.5) * 56; z = (Math.random() - 0.5) * 56; }
-    if (x > 28) x -= 56; else if (x < -28) x += 56;
-    if (z > 28) z -= 56; else if (z < -28) z += 56;
+    let yy = y - gY;
+    if (yy < 0) { yy += RAIN_H; x = cx + (Math.random() - 0.5) * 2 * RAIN_R; z = cz + (Math.random() - 0.5) * 2 * RAIN_R; }
+    else if (yy > RAIN_H) yy -= RAIN_H;
+    y = gY + yy; x = wrapR(x, cx); z = wrapR(z, cz);
     rainP[i * 3] = x; rainP[i * 3 + 1] = y; rainP[i * 3 + 2] = z;
-    const o = i * 6; a[o] = x; a[o + 1] = y; a[o + 2] = z; a[o + 3] = x - vx * 0.045; a[o + 4] = y - vy * 0.045; a[o + 5] = z - vz * 0.045;
+    let roofed = false;
+    if (yy < 8) for (const h of near) if (Math.abs(x - h.x) < h.w / 2 + 0.3 && Math.abs(z - h.z) < h.d / 2 + 0.3) { roofed = true; break; }   // unter Dach: Tropfen unsichtbar (Strich der Länge 0)
+    const o = i * 6; a[o] = x; a[o + 1] = y; a[o + 2] = z;
+    if (roofed) { a[o + 3] = x; a[o + 4] = y; a[o + 5] = z; } else { a[o + 3] = x - vx * 0.045; a[o + 4] = y - vy * 0.045; a[o + 5] = z - vz * 0.045; }
   }
   rainMesh.geometry.setDrawRange(0, n * 2); rainMesh.geometry.attributes.position.needsUpdate = true;
 }
@@ -4480,8 +4488,8 @@ function updateEnvAudio(dt, t) {
     envAud = { rain: mk('bandpass', 850, 0.3), rainLo: mk('lowpass', 380, 0.6), wind: mk('lowpass', 300, 0.8) };   // Regen: weiches Rauschen (tief gefiltert, kein scharfes Zischen)
   }
   const inK = roomK, rk = ENV.rainK, s = ENV.wS, T = AC.currentTime;
-  envAud.rain.g.gain.setTargetAtTime(0.009 * rk * (1 - 0.8 * inK), T, 0.3);          // Regen nur leise im Hintergrund
-  envAud.rainLo.g.gain.setTargetAtTime(0.007 * rk * (1 - 0.6 * inK), T, 0.3);
+  envAud.rain.g.gain.setTargetAtTime(0.009 * rk * (1 - 0.65 * inK), T, 0.3);          // Regen nur leise im Hintergrund
+  envAud.rainLo.g.gain.setTargetAtTime(0.007 * rk * (1 - 0.1 * inK), T, 0.3);   // im Haus bleibt ein dumpfes Prasseln hörbar
   envAud.wind.fl.frequency.setTargetAtTime(180 + 55 * s, T, 0.4);
   envAud.wind.g.gain.setTargetAtTime(Math.min(0.14, (0.01 + 0.012 * s) * (1 - 0.6 * inK) * (1 - 0.35 * rk) * (0.85 + 0.15 * Math.sin(t * 0.7))), T, 0.4);
   if (revSend) revSend.gain.setTargetAtTime(0.05 + 0.3 * inK + (ENV.wx === 3 ? 0.04 : 0) + 0.03 * ENV.cur.night, T, 0.25);
@@ -4897,8 +4905,8 @@ function updateRoomLight(dt) {                                              // i
   for (const h of houses) if (h.e && Math.abs(pos.x - h.x) < h.w / 2 + 0.2 && Math.abs(pos.z - h.z) < h.d / 2 + 0.2) { inside = true; break; }
   roomK += ((inside ? 1 : 0) - roomK) * Math.min(1, dt * 6);
   // Tagsüber wird es im Haus heller und wärmer; nachts bleibt es dunkel (kein plötzliches Aufhellen beim Betreten): Aufhellung und Farbwechsel klingen mit der Nacht auf nahezu null ab
-  const nk = Math.min(1, ENV.cur.night), dayK = roomK * (1 - nk * 0.92);
-  roomLight.intensity = ENV.cur.hemiI + (0.2 * (1 - nk) + 0.03 * nk) * roomK;
+  const nk = Math.min(1, ENV.cur.night), wk = 1 - 0.85 * Math.min(1, ENV.cur.dark), dayK = roomK * (1 - nk * 0.92) * wk;   // wk: bei Regen/Wolken kaum Aufhellung im Haus (draußen ist es ja auch dunkel)
+  roomLight.intensity = ENV.cur.hemiI + (0.11 * (1 - nk) * wk + 0.02 * nk) * roomK;
   roomLight.groundColor.copy(ROOM_G0).lerp(ROOM_G1, dayK); roomLight.color.copy(ROOM_S0).lerp(ROOM_S1, dayK);
 }
 
