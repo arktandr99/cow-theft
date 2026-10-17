@@ -3304,30 +3304,51 @@ function laserShow(i, own, gun) {                                         // Str
   if (own) laserAim = { P, at: performance.now() };
   return true;
 }
-// Mündungslicht: solange das Mündungsfeuer zu sehen ist (ca. 0,05 s), leuchtet es Waffe, Boden, Wände und Umstehende orange an.
+// Mündungslicht: solange das Mündungsfeuer zu sehen ist (ca. 0,05 s), leuchtet es Boden, Wände und Umstehende orange an.
+// Das Licht sitzt nicht an der Waffe, sondern mehrere Meter VOR der Mündung in Schussrichtung (der Schütze selbst wird kaum angestrahlt).
+// Steht ein Hindernis davor, rückt es bis auf 60 % der freien Strecke heran, damit es nie hinter einer Wand liegt.
 // Licht 0 gehört der eigenen Waffe (beim Zielen schwächer, damit das Bild nicht ausbrennt), Licht 1-2 den beiden nächsten Schützen in 80 m.
-const _mlP = new THREE.Vector3(), _mlQ = new THREE.Vector3();
-function muzzleLightAt(L, fo, base, push) {
+// Zusätzlich hellt jeder Schuss das Umgebungslicht kurz auf ("Streulicht"), damit Schattenbereiche in der Nähe blasser werden: ein Punktlicht ohne Schattenwurf allein reicht dafür nicht.
+const _mlP = new THREE.Vector3(), _mlQ = new THREE.Vector3(), ML_WARM = new THREE.Color(0xffc690);
+function muzzleLightAt(L, fo, base, push, skipId) {
   fo.getWorldPosition(_mlP); _mlQ.set(0, 0, fo.position.z < 0 ? -1 : 1); fo.localToWorld(_mlQ); _mlQ.sub(_mlP).normalize();   // Richtung nach vorn (Laufrichtung)
-  L.position.set(_mlP.x + _mlQ.x * push, _mlP.y + _mlQ.y * push, _mlP.z + _mlQ.z * push);
+  let d = push;
+  const tr = laserTrace(_mlP.x, _mlP.y, _mlP.z, _mlQ.x, _mlQ.y, _mlQ.z, skipId);        // freie Strecke vor der Mündung
+  if (tr.hit) d = Math.min(push, tr.t * 0.6);
+  if (!(d > 0.15)) d = 0.15;
+  L.position.set(_mlP.x + _mlQ.x * d, _mlP.y + _mlQ.y * d, _mlP.z + _mlQ.z * d);
   L.intensity = base * (fo.userData.k || 1) * (0.85 + Math.random() * 0.3);
+  return d;
 }
 function updateMuzzleLights() {
   if (!FLASHL.length) return;
   for (const L of FLASHL) L.intensity = 0;
   if (!worldBuilt || GFX.level <= 0) return;
+  let fill = 0;                                                            // Streulicht: wie stark das Umgebungslicht in diesem Bild angehoben wird
   try {
     const fo = vg && vg.userData && vg.userData.flash;
-    if (fo && fo.visible && vg.visible && me && !me.dead) { vg.updateMatrixWorld(true); muzzleLightAt(FLASHL[0], fo, 2.2 * (1 - ads * 0.5), 0.55); }
+    if (fo && fo.visible && vg.visible && me && !me.dead) {
+      vg.updateMatrixWorld(true);
+      muzzleLightAt(FLASHL[0], fo, 3.2 * (1 - ads * 0.5), 3.4, myId);
+      fill = Math.max(fill, 0.17 * (1 - ads * 0.5) * Math.min(1.3, fo.userData.k || 1));
+    }
     const cand = [];
     for (const p of plist || []) {
       if (p.i === myId || p.d) continue;
       const g = pMesh[p.i], fl = g && g.userData && g.userData.flash; if (!fl || !fl.visible || !g.visible) continue;
-      const d = Math.hypot(p.x - pos.x, p.z - pos.z); if (d < 80) cand.push({ fl, d });
+      const d = Math.hypot(p.x - pos.x, p.z - pos.z); if (d < 80) cand.push({ fl, d, id: p.i });
     }
     cand.sort((a, b) => a.d - b.d);
-    for (let i = 0; i < 2 && i < cand.length; i++) muzzleLightAt(FLASHL[1 + i], cand[i].fl, 2.8, 0.6);
+    for (let i = 0; i < 2 && i < cand.length; i++) {
+      muzzleLightAt(FLASHL[1 + i], cand[i].fl, 3.6, 3.8, cand[i].id);
+      if (cand[i].d < 30) fill = Math.max(fill, 0.11 * (1 - cand[i].d / 30));       // Schüsse in der Nähe hellen auch deine Umgebung etwas auf
+    }
   } catch (err) { }
+  if (fill > 0 && roomLight) {                                             // nach updateRoomLight: addiert sich nur für dieses Bild (roomLight wird jedes Bild neu gesetzt)
+    roomLight.intensity += fill;
+    const w = Math.min(0.5, fill * 3);
+    roomLight.color.lerp(ML_WARM, w); roomLight.groundColor.lerp(ML_WARM, w);
+  }
 }
 function updateLasers() {                                                 // nach Kamera und Waffenanzeige aufrufen (die Matrizen müssen aktuell sein)
   let n = 0;
@@ -4025,7 +4046,7 @@ function buildWorld(penR) {
   skyMesh = makeSky(); scene.add(skyMesh);
   roomLight = new THREE.HemisphereLight(0xdde9ff, 0x6b8453, 0.66); scene.add(roomLight);   // Umgebungslicht; in begehbaren Häusern heller und wärmer (updateRoomLight)
   sunLight = new THREE.DirectionalLight(0xfff0d6, 0.95); sunLight.position.set(SUN[0] * 150, SUN[1] * 150, SUN[2] * 150); scene.add(sunLight); scene.add(sunLight.target);
-  FLASHL = []; for (let i = 0; i < 3; i++) { const l = new THREE.PointLight(0xffa24a, 0, 24, 2); l.visible = GFX.level > 0; scene.add(l); FLASHL.push(l); }   // immer dieselbe Zahl Lichter: die Shader werden nur einmal übersetzt
+  FLASHL = []; for (let i = 0; i < 3; i++) { const l = new THREE.PointLight(0xffa24a, 0, 34, 2); l.visible = GFX.level > 0; scene.add(l); FLASHL.push(l); }   // immer dieselbe Zahl Lichter: die Shader werden nur einmal übersetzt
   setupSun();
   if (TER) {
     scene.add(buildTerrainMesh());
