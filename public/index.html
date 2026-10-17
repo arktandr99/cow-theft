@@ -3305,23 +3305,30 @@ function laserShow(i, own, gun) {                                         // Str
   return true;
 }
 // Mündungslicht: solange das Mündungsfeuer zu sehen ist (ca. 0,05 s), leuchtet es Boden, Wände, Bäume und Umstehende orange an.
-// Die Lichtquelle sitzt direkt an der Mündung der jeweiligen Waffe (die Feuerblume steckt bei jeder Waffe am Laufende: U.muzzle), nur 10 cm davor.
+// Es ist ein SCHEINWERFER-Kegel (SpotLight), der an der Mündung der jeweiligen Waffe sitzt (10 cm vor dem Laufende: U.muzzle) und nach vorn in Schussrichtung zeigt:
+// Was hinter oder neben der Mündung liegt (Waffe, Hände, Schütze, Boden unter dir) wird nicht angestrahlt, das Bild brennt nicht aus.
+// Bei Tageslicht ist das Licht schwächer als nachts, und vor einer nahen Wand wird es zusätzlich gedämpft (sonst füllt die Wand den Bildschirm).
 // Steht ein Hindernis direkt vor der Mündung, rückt das Licht auf höchstens 60 % der freien Strecke heran, damit es nie hinter einer Wand liegt.
 // Licht 0 gehört der eigenen Waffe (beim Zielen schwächer), Licht 1-2 den beiden nächsten Schützen in 80 m.
-// Schatten: (1) die Sonnenschatten werden rund ums Feuer ausgeblendet (Shader-Zusatz weiter unten, ML_UNI), denn sonst würde der Schatten auch das Mündungslicht verschlucken;
-// (2) zusätzlich hellt jeder Schuss das Umgebungslicht kurz auf ("Streulicht").
+// Schatten: (1) die Sonnenschatten werden vor der Mündung ausgeblendet (Shader-Zusatz weiter unten, ML_UNI), denn sonst würde der Schatten auch das Mündungslicht verschlucken;
+// (2) zusätzlich hellt jeder Schuss das Umgebungslicht ganz leicht auf ("Streulicht").
 const _mlP = new THREE.Vector3(), _mlQ = new THREE.Vector3(), ML_WARM = new THREE.Color(0xffc690);
 function muzzleLightAt(L, fo, base, push, skipId) {
   fo.getWorldPosition(_mlP); _mlQ.set(0, 0, fo.position.z < 0 ? -1 : 1); fo.localToWorld(_mlQ); _mlQ.sub(_mlP).normalize();   // Richtung nach vorn (Laufrichtung)
   let d = push;
   const tr = laserTrace(_mlP.x, _mlP.y, _mlP.z, _mlQ.x, _mlQ.y, _mlQ.z, skipId);        // freie Strecke vor der Mündung
+  const free = tr.hit ? tr.t : 40;
   if (tr.hit) d = Math.min(push, tr.t * 0.6);
   if (!(d > 0.03)) d = 0.03;
   L.position.set(_mlP.x + _mlQ.x * d, _mlP.y + _mlQ.y * d, _mlP.z + _mlQ.z * d);
-  L.intensity = base * (fo.userData.k || 1) * (0.85 + Math.random() * 0.3);
-  return d;
+  L.target.position.set(_mlP.x + _mlQ.x * 8, _mlP.y + _mlQ.y * 8, _mlP.z + _mlQ.z * 8); L.target.updateMatrixWorld(true);
+  const nk = ENV && ENV.cur ? Math.min(1, ENV.cur.night || 0) : 0;
+  const dayK = 0.55 + 0.45 * nk;                                            // Tag: gut halb so stark wie nachts
+  const nearK = Math.min(1, 0.3 + 0.7 * free / 4);                           // Wand näher als 4 m: schwächer (ab 1 m nur noch ca. halb)
+  L.intensity = base * (fo.userData.k || 1) * dayK * nearK * (0.85 + Math.random() * 0.3);
+  return { d, dir: _mlQ, dayK };
 }
-function mlShadowAt(i, L, w) { ML_UNI.value[i].set(L.position.x, L.position.y, L.position.z, w); }
+function mlShadowAt(i, L, w, dir) { ML_UNI.value[i].set(L.position.x, L.position.y, L.position.z, w); ML_DIR.value[i].set(dir.x, dir.y, dir.z, 0); }
 function updateMuzzleLights() {
   if (!FLASHL.length) return;
   for (const L of FLASHL) L.intensity = 0;
@@ -3332,9 +3339,9 @@ function updateMuzzleLights() {
     const fo = vg && vg.userData && vg.userData.flash;
     if (fo && fo.visible && vg.visible && me && !me.dead) {
       vg.updateMatrixWorld(true);
-      muzzleLightAt(FLASHL[0], fo, 2.8 * (1 - ads * 0.5), 0.1, myId);
-      mlShadowAt(0, FLASHL[0], 1 - ads * 0.4);
-      fill = Math.max(fill, 0.12 * (1 - ads * 0.5) * Math.min(1.3, fo.userData.k || 1));
+      const r = muzzleLightAt(FLASHL[0], fo, 2.0 * (1 - ads * 0.5), 0.1, myId);
+      mlShadowAt(0, FLASHL[0], (1 - ads * 0.4) * r.dayK, r.dir);
+      fill = Math.max(fill, 0.05 * (1 - ads * 0.5) * Math.min(1.3, fo.userData.k || 1) * r.dayK);
     }
     const cand = [];
     for (const p of plist || []) {
@@ -3344,9 +3351,9 @@ function updateMuzzleLights() {
     }
     cand.sort((a, b) => a.d - b.d);
     for (let i = 0; i < 2 && i < cand.length; i++) {
-      muzzleLightAt(FLASHL[1 + i], cand[i].fl, 3.2, 0.1, cand[i].id);
-      mlShadowAt(1 + i, FLASHL[1 + i], 0.9);
-      if (cand[i].d < 30) fill = Math.max(fill, 0.08 * (1 - cand[i].d / 30));       // Schüsse in der Nähe hellen auch deine Umgebung etwas auf
+      const r = muzzleLightAt(FLASHL[1 + i], cand[i].fl, 2.4, 0.1, cand[i].id);
+      mlShadowAt(1 + i, FLASHL[1 + i], 0.9 * r.dayK, r.dir);
+      if (cand[i].d < 30) fill = Math.max(fill, 0.03 * (1 - cand[i].d / 30) * r.dayK);       // Schüsse in der Nähe hellen auch deine Umgebung minimal auf
     }
   } catch (err) { }
   if (fill > 0 && roomLight) {                                             // nach updateRoomLight: addiert sich nur für dieses Bild (roomLight wird jedes Bild neu gesetzt)
@@ -4051,7 +4058,7 @@ function buildWorld(penR) {
   skyMesh = makeSky(); scene.add(skyMesh);
   roomLight = new THREE.HemisphereLight(0xdde9ff, 0x6b8453, 0.66); scene.add(roomLight);   // Umgebungslicht; in begehbaren Häusern heller und wärmer (updateRoomLight)
   sunLight = new THREE.DirectionalLight(0xfff0d6, 0.95); sunLight.position.set(SUN[0] * 150, SUN[1] * 150, SUN[2] * 150); scene.add(sunLight); scene.add(sunLight.target);
-  FLASHL = []; for (let i = 0; i < 3; i++) { const l = new THREE.PointLight(0xffa24a, 0, 34, 2); l.visible = GFX.level > 0; scene.add(l); FLASHL.push(l); }   // immer dieselbe Zahl Lichter: die Shader werden nur einmal übersetzt
+  FLASHL = []; for (let i = 0; i < 3; i++) { const l = new THREE.SpotLight(0xffa24a, 0, 30, 0.95, 1, 2); l.visible = GFX.level > 0; scene.add(l); scene.add(l.target); FLASHL.push(l); }   // immer dieselbe Zahl Lichter: die Shader werden nur einmal übersetzt
   setupSun();
   if (TER) {
     scene.add(buildTerrainMesh());
@@ -4644,18 +4651,18 @@ $('setbtn').addEventListener('click', openSettings);
 // ---------- Eingabe ----------
 // Mündungsfeuer gegen Schatten. In three.js (MeshLambertMaterial) wird das GESAMTE direkte Licht, also Sonne UND Mündungslicht, mit dem Sonnenschatten multipliziert:
 // Im Baumschatten kam vom Mündungslicht deshalb nie etwas an. Dieser Shader-Zusatz blendet den Sonnenschatten rund um das Mündungsfeuer aus (uMlF: xyz = Weltposition, w = Stärke 0-1).
-const ML_UNI = { value: [new THREE.Vector4(0, 0, 0, 0), new THREE.Vector4(0, 0, 0, 0), new THREE.Vector4(0, 0, 0, 0)] }, ML_RAD = 30;
+const ML_UNI = { value: [new THREE.Vector4(0, 0, 0, 0), new THREE.Vector4(0, 0, 0, 0), new THREE.Vector4(0, 0, 0, 0)] }, ML_DIR = { value: [new THREE.Vector4(0, 0, -1, 0), new THREE.Vector4(0, 0, -1, 0), new THREE.Vector4(0, 0, -1, 0)] }, ML_RAD = 26;   // ML_DIR: Schussrichtung je Licht, der Schatten verschwindet nur VOR der Mündung
 THREE.Material.prototype.onBeforeCompile = function (shader) {
   try {
     if (!shader || !shader.vertexShader || !shader.fragmentShader) return;
     if (shader.vertexShader.indexOf('#define LAMBERT') < 0 || shader.fragmentShader.indexOf('* getShadowMask();') < 0 || shader.vertexShader.indexOf('#include <project_vertex>') < 0) return;   // nur Lambert-Material mit Schattenmaske
-    shader.uniforms.uMlF = ML_UNI;
+    shader.uniforms.uMlF = ML_UNI; shader.uniforms.uMlD = ML_DIR;
     shader.vertexShader = shader.vertexShader
       .replace('varying vec3 vLightFront;', 'varying vec3 vLightFront;\nvarying vec3 vMlWp;')
       .replace('#include <project_vertex>', '#include <project_vertex>\n\tvec4 mlW = vec4( transformed, 1.0 );\n\t#ifdef USE_INSTANCING\n\t\tmlW = instanceMatrix * mlW;\n\t#endif\n\tvMlWp = ( modelMatrix * mlW ).xyz;');
     shader.fragmentShader = shader.fragmentShader
-      .replace('varying vec3 vLightFront;', 'varying vec3 vLightFront;\nvarying vec3 vMlWp;\nuniform vec4 uMlF[3];')
-      .replace('void main() {', 'float mlShadow( float sh ) {\n\tfloat k = 0.0;\n\tfor ( int i = 0; i < 3; i ++ ) {\n\t\tfloat t = clamp( 1.0 - distance( vMlWp, uMlF[ i ].xyz ) / ' + ML_RAD.toFixed(1) + ', 0.0, 1.0 );\n\t\tk = max( k, uMlF[ i ].w * t * t * ( 3.0 - 2.0 * t ) );\n\t}\n\treturn mix( sh, 1.0, clamp( k, 0.0, 1.0 ) );\n}\nvoid main() {')
+      .replace('varying vec3 vLightFront;', 'varying vec3 vLightFront;\nvarying vec3 vMlWp;\nuniform vec4 uMlF[3];\nuniform vec4 uMlD[3];')
+      .replace('void main() {', 'float mlShadow( float sh ) {\n\tfloat k = 0.0;\n\tfor ( int i = 0; i < 3; i ++ ) {\n\t\tvec3 rel = vMlWp - uMlF[ i ].xyz;\n\t\tfloat dist = length( rel );\n\t\tfloat t = clamp( 1.0 - dist / ' + ML_RAD.toFixed(1) + ', 0.0, 1.0 );\n\t\tfloat f = dist < 0.5 ? 1.0 : smoothstep( 0.15, 0.7, dot( rel / dist, uMlD[ i ].xyz ) );\n\t\tk = max( k, uMlF[ i ].w * t * t * ( 3.0 - 2.0 * t ) * f );\n\t}\n\treturn mix( sh, 1.0, clamp( k, 0.0, 1.0 ) );\n}\nvoid main() {')
       .replace('* getShadowMask();', '* mlShadow( getShadowMask() );');
   } catch (err) { }
 };
