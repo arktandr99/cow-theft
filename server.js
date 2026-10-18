@@ -373,7 +373,7 @@ function loadWorld(seed) {
 // ---------- Zustand ----------
 const players = {};
 let cows = [], nextId = 1, matchEnd = 0, over = false;
-let phase = 'play', lobbyEnd = 0, voteEnd = 0, voteOpts = [], voteGen = 0;   // Ablauf: 'lobby' (Warteraum) -> 'play' -> 'over' (Statistik + Kartenwahl) -> 'lobby' ...
+let phase = 'play', lobbyEnd = 0, voteEnd = 0, voteOpts = [], voteGen = 0, voteTimer = null;   // Ablauf: 'lobby' (Warteraum) -> 'play' -> 'over' (Statistik + Kartenwahl) -> 'lobby' ...
 let quadList = [], nades = [], smokes = [], nextNid = 1;   // Quads, Granaten im Flug, Rauchwolken
 let bullets = [], nextBid = 1;
 let barricades = [], nextBar = 1;                 // Sandsack-Deckungen der Pioniere                      // Geschosse in der Luft
@@ -471,22 +471,34 @@ function reset(seed) {
   over = false; voteOpts = [];
   if (LOBBY_S > 0) { phase = 'lobby'; lobbyEnd = Date.now() + LOBBY_S * 1000; matchEnd = Date.now() + MATCH_SECONDS * 1000; } else { phase = 'play'; matchEnd = Date.now() + MATCH_SECONDS * 1000; }
   for (const p of Object.values(players)) { p.cow = null; p.quad = null; p.kills = 0; p.deaths = 0; p.dl = 0; p.hs = 0; p.dmg = 0; p.revives = 0; p.ready = false; p.vote = -1; if (p.joined || p.bot) spawn(p); }
-  prepareVote();
+  if (voteTimer) clearTimeout(voteTimer);
+  voteTimer = null; voteGen++;                                      // ältere Vorschau abbrechen bzw. beim nächsten Ergebnis ignorieren
+  if (!SEED_FIXED) {
+    const delay = Math.min(90000, Math.max(3000, MATCH_SECONDS * 500));
+    voteTimer = setTimeout(() => { voteTimer = null; prepareVote(); }, delay);  // Kartenvorschauen erst erzeugen, wenn der Server und die Runde warm sind
+  }
 }
 // Die Runde beginnt: Zeit läuft, Schüsse sind erlaubt
 function startPlay(now) {
   phase = 'play'; matchEnd = now + MATCH_SECONDS * 1000;
+  for (const p of Object.values(players)) if (p.bot && p.ai) { p.ai.thinkAt = now + Math.random() * 100; p.ai.lastThink = now; }
   bc({ t: 'msg', x: 'Die Runde beginnt – holt die Kühe!' });
 }
 // Kartenvorschläge für die Abstimmung (im Hintergrund-Thread erzeugt, damit der Server nicht ruckelt): drei neue Karten + die aktuelle
 const renderPreview = require('./preview');
-function prepareVote() {
+async function prepareVote() {
   if (SEED_FIXED) return;
   const gen = ++voteGen, seeds = [];
   while (seeds.length < 3) { const sd = newSeed(); if (sd !== WORLD.seed && !seeds.includes(sd)) seeds.push(sd); }
   seeds.push(WORLD.seed);
   const cfg = sd => ({ PEN: JSON.parse(JSON.stringify(PEN)), PEN_R, MAP, seed: sd });
-  Promise.all(seeds.map(sd => renderPreview(cfg(sd)).catch(() => ({ seed: sd, w: 0, rgb: '' })))).then(res => { if (gen === voteGen) voteOpts = res; });
+  const res = [];
+  for (const sd of seeds) {
+    if (gen !== voteGen) return;
+    try { res.push(await renderPreview(cfg(sd))); }
+    catch { res.push({ seed: sd, w: 0, rgb: '' }); }
+  }
+  if (gen === voteGen) voteOpts = res;                              // nur einen Karten-Worker gleichzeitig ausführen
 }
 
 // ---------- Rangliste (Datei rangliste.json im Projektordner) ----------
@@ -1563,14 +1575,15 @@ function pickCow(p) {      // nächste freie Kuh, die nicht im eigenen Gehege st
   return best;
 }
 
-function newAI(job) { return { job, lane: (Math.random() < 0.5 ? -1 : 1) * rnd(30, 70), via: null, viaKey: '', viaDone: false, target: null, nextScan: 0, reactAt: 0, burst: 3, pauseUntil: 0, cowId: -1, stuck: 0, detourUntil: 0, detourDir: 1, mountAt: 0, wz: rnd(-12, 12), wzAt: 0 }; }
+function newAI(job) { return { job, lane: (Math.random() < 0.5 ? -1 : 1) * rnd(30, 70), via: null, viaKey: '', viaDone: false, target: null, nextScan: 0, reactAt: 0, burst: 3, pauseUntil: 0, cowId: -1, stuck: 0, detourUntil: 0, detourDir: 1, mountAt: 0, wz: rnd(-12, 12), wzAt: 0, thinkAt: 0, lastThink: 0 }; }
 function resetAI(p) {   // nach jedem Spawn: Gedächtnis löschen; die Rolle für den nächsten Spawn wird neu gewürfelt
   p.ai = newAI(p.ai.job); p.ai.nextScan = Date.now() + RAD(400);
+  p.ai.thinkAt = Date.now() + Math.random() * 100; p.ai.lastThink = Date.now();
   const L = randLoadout(); p.nextRole = L.cls; p.next1 = L.w1; p.next2 = L.w2;
 }
 
-function botThink(p, now) {
-  const ai = p.ai, dt = 0.05, BL = BOT_LEVELS[botLevel];
+function botThink(p, now, dt) {
+  const ai = p.ai, BL = BOT_LEVELS[botLevel];
   p.reviving = false;                                                            // wird unten nur gesetzt, wenn der Bot gerade einen Kameraden wiederbelebt
   if (p.dead || over) { p.moving = false; p.sprint = false; return; }
   if (now >= (ai.doorAt || 0) && p.cow === null) {                              // Bots öffnen Türen, an denen sie vorbeilaufen
@@ -1948,7 +1961,11 @@ setInterval(() => {
     p.bloom = Math.max(0, p.bloom - 0.00075); // Rückstoß-Streuung klingt ab
     if (p.dead && !over && p.respawnAt && now >= p.respawnAt) { p.respawnAt = 0; spawn(p); }
     if (p.down && !p.dead && now - p.downAt >= DOWN_MS) kill(p, p.downBy !== null && players[p.downBy] ? players[p.downBy] : null, null, null, 'ist verblutet');
-    if (p.bot && phase === 'play') botThink(p, now);
+    if (p.bot && phase === 'play' && p.ai && now >= p.ai.thinkAt) {
+      const ai = p.ai, dt = Math.min(0.12, Math.max(0.05, (now - (ai.lastThink || now - 50)) / 1000));
+      ai.lastThink = now; ai.thinkAt = now + 90 + Math.random() * 20;   // KI halb so oft aktualisieren und die Bots über die Zeit verteilen
+      botThink(p, now, dt);
+    }
     { const k = 0.5; p.vx = p.vx * (1 - k) + (p.x - p.lx) / 0.05 * k; p.vz = p.vz * (1 - k) + (p.z - p.lz) / 0.05 * k; p.lx = p.x; p.lz = p.z; if (p.dead) { p.vx = 0; p.vz = 0; } }   // geschätzte Geschwindigkeit (Vorhalt der Bots)
     if (!p.dead && !p.down) pickups(p, now);
     if (!p.dead && p.cow !== null) {
