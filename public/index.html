@@ -3350,7 +3350,7 @@ function laserGet(i) {
 function laserTrace(ox, oy, oz, dx, dy, dz, skipId, noPl) {
   const ex = ox + dx * LASER_MAX, ez = oz + dz * LASER_MAX, x0 = Math.min(ox, ex) - 6, x1 = Math.max(ox, ex) + 6, z0 = Math.min(oz, ez) - 6, z1 = Math.max(oz, ez) + 6;
   const bx = [], cc = [], hs = [];
-  for (const b of solids.boxes) if (b.x + b.hw > x0 && b.x - b.hw < x1 && b.z + b.hd > z0 && b.z - b.hd < z1) bx.push(b);
+  for (const b of solids.boxes) if (!b.tr && b.x + b.hw > x0 && b.x - b.hw < x1 && b.z + b.hd > z0 && b.z - b.hd < z1) bx.push(b);
   for (const c of solids.circles) if (c.x + c.r > x0 && c.x - c.r < x1 && c.z + c.r > z0 && c.z - c.r < z1) cc.push(c);
   for (const h of houses) if (h.x + h.w / 2 + 3 > x0 && h.x - h.w / 2 - 3 < x1 && h.z + h.d / 2 + 3 > z0 && h.z - h.d / 2 - 3 < z1) hs.push(h);
   const solid = (x, y, z) => {
@@ -4332,7 +4332,7 @@ function buildWorld(penR) {
     glassList = [];
     for (const h of houses) addBuilding(B, h);
     addTrenches(B);
-    for (const p of props) { addProp(B, p); if (p.s && p.k !== 'trench') { const rr = ROUND_PROP[p.k]; if (rr) solids.circles.push({ x: p.x, z: p.z, r: rr }); else solids.boxes.push({ x: p.x, z: p.z, hw: p.w / 2, hd: p.d / 2, h: p.h || 9 }); } }   // Unsichtbare Graben-Sperrkästen sind keine Kollision: man fällt über die Kante in den Graben
+    for (const p of props) { addProp(B, p); if (p.s) { const rr = ROUND_PROP[p.k]; if (rr) solids.circles.push({ x: p.x, z: p.z, r: rr }); else solids.boxes.push({ x: p.x, z: p.z, hw: p.w / 2, hd: p.d / 2, h: p.h || 9, vm: p.k === 'trench' ? VAULT_MAX_TRENCH : 0, tr: p.k === 'trench' }); } }   // Grabenwände blockieren den Ausgang; beim Hineingehen kann man hineinfallen
     for (const tr of treeList) { addTree(B.S, tr); solids.circles.push({ x: tr.x, z: tr.z, r: TREE_TRUNK_R[tr.k] * tr.s }); }   // Positionen kommen vom Server; die Sperre ist so dick wie der sichtbare Stamm
     const lm = map => new THREE.MeshLambertMaterial(map ? { map, vertexColors: true } : { vertexColors: true });
     for (const [b, mat] of [[B.W, lm(T.wallB())], [B.R, lm(T.roofB())], [B.D, lm(T.woodB())], [B.S, lm()]]) if (!b.empty) scene.add(b.mesh(mat));
@@ -5049,7 +5049,9 @@ function move(dt) {
   if (keys.KeyA) { fx_ -= Math.cos(yaw); fz -= -Math.sin(yaw); }
   const l = Math.hypot(fx_, fz); moving = l > 0;
   if (l > 0) {
+    const fromX = pos.x, fromZ = pos.z;
     pos.x += fx_ / l * sp * dt; pos.z += fz / l * sp * dt;
+    if (!keys.Space && pitDepth(fromX, fromZ) > 0 && pitDepth(pos.x, pos.z) === 0 && solids.boxes.some(b => b.tr && Math.abs(pos.x - b.x) < b.hw + 0.5 && Math.abs(pos.z - b.z) < b.hd + 0.5)) { pos.x = fromX; pos.z = fromZ; } // An einer Grabenwand festhalten; offene Stufen bleiben begehbar
     if (swim) { swimT -= dt; if (swimT <= 0) { sSplash(null, 0.35); swimT = 0.9 + Math.random() * 0.4; } }     // Schwimmzüge
     else {
       if (jy === 0) stepT -= dt; // Schritt- bzw. Hufgeräusche (nicht in der Luft)
@@ -5092,7 +5094,7 @@ function resolveCollisions(rad) {
       for (const w of h.wl) boxOut(w[0], w[1], w[2], w[3]);
       for (const f of h.fu) boxOut(f.x, f.z, f.hw, f.hd);
     }
-    for (const b of solids.boxes) boxOut(b.x, b.z, b.hw, b.hd);
+    for (const b of solids.boxes) if (!b.tr || pitDepth(pos.x, pos.z) === 0) boxOut(b.x, b.z, b.hw, b.hd);
     for (const c of solids.circles) circleOut(c.x, c.z, c.r);
     for (const id in cMesh) { // Kühe ohne Reiter sind Hindernisse
       const d = cMesh[id].userData.t;
