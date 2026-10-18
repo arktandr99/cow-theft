@@ -481,7 +481,7 @@ function reset(seed) {
 // Die Runde beginnt: Zeit läuft, Schüsse sind erlaubt
 function startPlay(now) {
   phase = 'play'; matchEnd = now + MATCH_SECONDS * 1000;
-  for (const p of Object.values(players)) if (p.bot && p.ai) { p.ai.thinkAt = now + Math.random() * 100; p.ai.lastThink = now; }
+  for (const p of Object.values(players)) if (p.bot && p.ai) p.ai.thinkAt = now + Math.random() * 100;
   bc({ t: 'msg', x: 'Die Runde beginnt – holt die Kühe!' });
 }
 // Kartenvorschläge für die Abstimmung (im Hintergrund-Thread erzeugt, damit der Server nicht ruckelt): drei neue Karten + die aktuelle
@@ -1575,15 +1575,15 @@ function pickCow(p) {      // nächste freie Kuh, die nicht im eigenen Gehege st
   return best;
 }
 
-function newAI(job) { return { job, lane: (Math.random() < 0.5 ? -1 : 1) * rnd(30, 70), via: null, viaKey: '', viaDone: false, target: null, nextScan: 0, reactAt: 0, burst: 3, pauseUntil: 0, cowId: -1, stuck: 0, detourUntil: 0, detourDir: 1, mountAt: 0, wz: rnd(-12, 12), wzAt: 0, thinkAt: 0, lastThink: 0 }; }
+function newAI(job) { return { job, lane: (Math.random() < 0.5 ? -1 : 1) * rnd(30, 70), via: null, viaKey: '', viaDone: false, target: null, nextScan: 0, reactAt: 0, burst: 3, pauseUntil: 0, cowId: -1, stuck: 0, detourUntil: 0, detourDir: 1, mountAt: 0, wz: rnd(-12, 12), wzAt: 0, thinkAt: 0 }; }
 function resetAI(p) {   // nach jedem Spawn: Gedächtnis löschen; die Rolle für den nächsten Spawn wird neu gewürfelt
   p.ai = newAI(p.ai.job); p.ai.nextScan = Date.now() + RAD(400);
-  p.ai.thinkAt = Date.now() + Math.random() * 100; p.ai.lastThink = Date.now();
+  p.ai.thinkAt = Date.now() + Math.random() * 100;
   const L = randLoadout(); p.nextRole = L.cls; p.next1 = L.w1; p.next2 = L.w2;
 }
 
-function botThink(p, now, dt) {
-  const ai = p.ai, BL = BOT_LEVELS[botLevel];
+function botThink(p, now) {
+  const ai = p.ai, dt = 0.05, BL = BOT_LEVELS[botLevel];
   p.reviving = false;                                                            // wird unten nur gesetzt, wenn der Bot gerade einen Kameraden wiederbelebt
   if (p.dead || over) { p.moving = false; p.sprint = false; return; }
   if (now >= (ai.doorAt || 0) && p.cow === null) {                              // Bots öffnen Türen, an denen sie vorbeilaufen
@@ -1962,9 +1962,9 @@ setInterval(() => {
     if (p.dead && !over && p.respawnAt && now >= p.respawnAt) { p.respawnAt = 0; spawn(p); }
     if (p.down && !p.dead && now - p.downAt >= DOWN_MS) kill(p, p.downBy !== null && players[p.downBy] ? players[p.downBy] : null, null, null, 'ist verblutet');
     if (p.bot && phase === 'play' && p.ai && now >= p.ai.thinkAt) {
-      const ai = p.ai, dt = Math.min(0.12, Math.max(0.05, (now - (ai.lastThink || now - 50)) / 1000));
-      ai.lastThink = now; ai.thinkAt = now + 90 + Math.random() * 20;   // KI halb so oft aktualisieren und die Bots über die Zeit verteilen
-      botThink(p, now, dt);
+      const ai = p.ai;
+      ai.thinkAt = now + 50;                                           // normale 20-Hz-Bewegung; nur der erste KI-Schritt ist verteilt
+      botThink(p, now);
     }
     { const k = 0.5; p.vx = p.vx * (1 - k) + (p.x - p.lx) / 0.05 * k; p.vz = p.vz * (1 - k) + (p.z - p.lz) / 0.05 * k; p.lx = p.x; p.lz = p.z; if (p.dead) { p.vx = 0; p.vz = 0; } }   // geschätzte Geschwindigkeit (Vorhalt der Bots)
     if (!p.dead && !p.down) pickups(p, now);
