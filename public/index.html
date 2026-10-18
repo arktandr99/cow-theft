@@ -421,9 +421,9 @@ const BOT_LVL_NAME = ['Leicht', 'Normal', 'Schwer']; let botLvl = 1;   // Stärk
 let phase = 0, phaseT = 0, endShown = false, myVote = -1, teamTry = 0, lastLobbyHtml = '';   // Rundenphase (0 Spiel, 1 Warteraum, 2 Rundenende), Restsekunden
 let deadSince = 0, wasDead = false, spec = { mode: 'death', id: null, fy: 0 }, giveT = 0, reviveHeld = false, downSent = false;   // Zuschauer nach dem Tod, Aufgeben, Wiederbeleben
 let prone = false, prK = 0, leanK = 0;          // liegend (Taste F), weicher Übergang; Lehnen -1 links .. +1 rechts
-let swimOff = 0, mantle = null, wasSwim = false, swimT = 0;   // Höhenversatz im Wasser (m), laufendes Überklettern, Schwimm-Zustand, Takt der Schwimmgeräusche
+let swimOff = 0, mantle = null, wasSwim = false, swimT = 0, lastGY = null, camLag = 0;   // lastGY/camLag: Boden unter den Füßen im letzten Bild, weiches Nachziehen der Kamera bei Stufen   // Höhenversatz im Wasser (m), laufendes Überklettern, Schwimm-Zustand, Takt der Schwimmgeräusche
 const SWIM_DEPTH = 0.85, LEAN_OFF = 0.42;       // Wassertiefe ab der man schwimmt; seitliche Verschiebung beim Lehnen (wie auf dem Server)
-const VAULT_MAX_H = 1.35, VAULT_T = 0.62, VAULT_PEAK = 1.2;   // höchstes überkletterbares Hindernis (m), Dauer (s), Höhe der Kletterbewegung (m)
+const VAULT_MAX_H = 1.35, VAULT_MAX_TRENCH = 1.6, VAULT_T = 0.62, VAULT_PEAK = 1.2;   // höchstes überkletterbares Hindernis (m), Dauer (s), Höhe der Kletterbewegung (m)
 let wasSprint = false, sprintOffAt = -1e9;      // Sprint-Erholung
 let shotsInRow = 0, lastKickAt = -1e9;          // Dauerfeuer-Zähler für den Rückstoß
 // Waffen-Totzone wie in Insurgency: Eine kleine Mausbewegung dreht zuerst nur die WAFFE (und damit Fadenkreuz und Schussrichtung) innerhalb einer Zone.
@@ -3773,7 +3773,7 @@ let TER = null, props = [], roadList = [], plazaList = [], fieldList = [], pondI
 function decodeTerrain(t) {
   const bin = atob(t.g), n = t.n * t.n, g = new Int16Array(n);
   for (let i = 0; i < n; i++) { const v = bin.charCodeAt(2 * i) | (bin.charCodeAt(2 * i + 1) << 8); g[i] = v > 32767 ? v - 65536 : v; }
-  TER = { cell: t.cell, half: t.half, n: t.n, g };
+  TER = { cell: t.cell, half: t.half, n: t.n, g, pits: (t.pits || []).map(q => ({ ...q, x1: q.x + q.nx * q.q, z1: q.z + q.nz * q.q })) };   // pits: Schützengräben (Zellraster, Stufe 0..4 mal st = Tiefe)
 }
 // Bodenhöhe für Fahrzeuge: das Höhenraster (4 m) ist bilinear, an jeder Rasterkante knickt der Hang – bei Tempo gibt das ein Ruckeln (Frequenz = Tempo / 4 m).
 // Hier wird mit einem quadratischen B-Spline geglättet (stetiger Hang, keine Knicke); höchstens 15 cm unter der echten Oberfläche, damit die Räder nicht einsinken.
@@ -3785,7 +3785,19 @@ function groundYS(x, z) {
   for (let j = 0; j < 3; j++) { const zz = Math.max(0, Math.min(N - 1, nz - 1 + j)); for (let i = 0; i < 3; i++) { const xx = Math.max(0, Math.min(N - 1, nx - 1 + i)); q += wx[i] * wz[j] * G[zz * N + xx]; } }
   return Math.max(q * 0.01, b - 0.15);
 }
-function groundY(x, z) {            // Bodenhöhe an einer Stelle (ohne Terrain: flach bei 0)
+// Tiefe eines Schützengrabens an einer Stelle (0 außerhalb) - identisch zu pitDepth() in world.js (Server): Zellraster je Graben, Stufe 0..4 mal 0,35 m
+function pitDepth(x, z) {
+  const P = TER && TER.pits; if (!P) return 0;
+  for (let i = 0; i < P.length; i++) {
+    const q = P[i];
+    if (x < q.x || z < q.z || x >= q.x1 || z >= q.z1) continue;
+    const lv = q.d.charCodeAt(Math.floor((z - q.z) / q.q) * q.nx + Math.floor((x - q.x) / q.q)) - 48;
+    return lv > 0 ? lv * q.st : 0;
+  }
+  return 0;
+}
+function groundY(x, z) { return groundBase(x, z) - pitDepth(x, z); }   // Bodenhöhe an einer Stelle (Gelände minus Graben)
+function groundBase(x, z) {            // Höhe des Geländes an einer Stelle (ohne Graben; ohne Terrain: flach bei 0)
   if (!TER) return 0;
   const N = TER.n, G = TER.g, C = TER.cell, HF = TER.half;
   let fx = (x + HF) / C, fz = (z + HF) / C;
@@ -3873,7 +3885,7 @@ class Batch {
 const rgb = hex => [(hex >> 16 & 255) / 255, (hex >> 8 & 255) / 255, (hex & 255) / 255];
 const WALLC = [0xefe3c8, 0xe8d3a8, 0xf4f1e8, 0xe8c4a4, 0xcdd6db, 0xd9cdb0].map(rgb), ROOFC = [0xb4532f, 0x8d3f2b, 0x585d66, 0x6b4a34].map(rgb);
 const SHUTC = [0x3f6b45, 0x7a3b2e, 0x3a4f78, 0x5d4a2a].map(rgb), BARNC = [0x8a2f22, 0x6e4a2a, 0x7a2a22, 0x7b5a36].map(rgb);
-const C = { white: [1, 1, 1], frame: rgb(0xf1ece0), glass: rgb(0x2b3a4a), door: rgb(0x5a3a1a), stone: rgb(0x8d8780), step: rgb(0x9a958c), wood: rgb(0x8a6a40), wood2: rgb(0x6a4a28), straw: rgb(0xd6b84e), dark: rgb(0x2c2c2c), metal: rgb(0xb9c0c6), slate: rgb(0x3f444c), gold: rgb(0xd9b34a), water: rgb(0x3a5a6a) };
+const C = { white: [1, 1, 1], frame: rgb(0xf1ece0), glass: rgb(0x2b3a4a), door: rgb(0x5a3a1a), stone: rgb(0x8d8780), step: rgb(0x9a958c), wood: rgb(0x8a6a40), wood2: rgb(0x6a4a28), straw: rgb(0xd6b84e), dark: rgb(0x2c2c2c), metal: rgb(0xb9c0c6), slate: rgb(0x3f444c), gold: rgb(0xd9b34a), water: rgb(0x3a5a6a), earth: rgb(0x7a5c3e) };
 Object.assign(T, {
   wallB: () => canvasTex('wallB', 128, 128, (x, w, h) => speckle(x, w, h, '#f1ece0', ['#e6dfd0', '#fbf7ee', '#ddd5c4'], 1400, 5), 1, 1),
   roofB: () => canvasTex('roofB', 128, 128, (x, w, h) => {
@@ -4100,7 +4112,27 @@ function addBuilding(B, h) {
 // ---------- Gegenstände (Zäune, Brunnen, Heu ...) ----------
 const TREE_TRUNK_R = [0.28, 0.30, 0.19];   // Stammradius je Baumart (mal Größe s); Server: dieselben Werte
 const ROUND_PROP = { well: 1.2, stack: 2.1, silo: 2.35 };   // Kreisradius der Bewegungssperre runder Gegenstände (Server: dieselben Werte)
+// Schützengräben: Verschalung aus Brettern an jeder Wand (Höhe = Höhenunterschied zur Nachbarzelle), Pfosten alle drei Zellen, Abschlussbrett oben und Laufbretter am Boden.
+function addTrenches(B) {
+  const { D } = B, DK = rgb(0x5a3c20);
+  for (const q of (TER && TER.pits) || []) {
+    const lv = (a, b) => (a < 0 || b < 0 || a >= q.nx || b >= q.nz) ? 0 : q.d.charCodeAt(b * q.nx + a) - 48;
+    for (let b = 0; b < q.nz; b++) for (let a = 0; a < q.nx; a++) {
+      const l = lv(a, b); if (!l) continue;
+      const cx = q.x + (a + 0.5) * q.q, cz = q.z + (b + 0.5) * q.q, top = groundBase(cx, cz), fl = top - l * q.st, h = q.q;
+      for (let k = 0; k < 3; k++) D.box(cx, fl - 0.01, cz - h / 2 + (k + 0.5) * h / 3, h - 0.04, 0.035, h / 3 - 0.05, k === 1 ? C.wood : C.wood2);   // Laufbretter (liegen knapp unter Fußhöhe)
+      for (const [da, db] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const n = lv(a + da, b + db); if (n >= l) continue;
+        const hh = (l - n) * q.st, ex = cx + da * h / 2, ez = cz + db * h / 2, ax = da === 0;      // Kante der Zelle; ax: Wand läuft entlang x
+        D.box(ex - da * 0.03, fl, ez - db * 0.03, ax ? h : 0.06, hh - 0.04, ax ? 0.06 : h, C.wood2);       // Bretterwand (liegt 3 cm in der Zelle)
+        D.box(ex - da * 0.05, fl + hh - 0.04, ez - db * 0.05, ax ? h : 0.12, 0.08, ax ? 0.12 : h, C.wood);   // Abschlussbrett, schaut 4 cm über den Rand
+        if ((a + b) % 3 === 0 && hh > 0.5) D.box(ex - da * 0.08, fl, ez - db * 0.08, 0.14, hh + 0.04, 0.14, DK);        // Pfosten
+      }
+    }
+  }
+}
 function addProp(B, p) {
+  if (p.k === 'trench') return;                                  // unsichtbare Sperrkästen rund um den Graben
   const { D, S, R, W } = B, y = groundY(p.x, p.z), rnd1 = () => 0.94 + Math.random() * 0.1;
   if (p.k === 'fence') {
     const ax = p.w >= p.d, len = ax ? p.w : p.d, a = ax ? [p.x - len / 2, p.z] : [p.x, p.z - len / 2], b = ax ? [p.x + len / 2, p.z] : [p.x, p.z + len / 2];
@@ -4179,10 +4211,55 @@ function buildTerrainMesh() {
     const edge = ss(250, 300, Math.max(Math.abs(x), Math.abs(z))), dk = 1 - 0.35 * edge; r *= dk; g *= dk; b *= dk;   // Waldboden am Rand
     col[3 * i] = r; col[3 * i + 1] = g; col[3 * i + 2] = b;
   }
-  for (let iz = 0; iz < N - 1; iz++) for (let ix = 0; ix < N - 1; ix++) { const a = iz * N + ix, b = a + 1, c = a + N, d = a + N + 1; idx.push(a, c, b, b, c, d); }   // gleiche Diagonale wie groundY()
+  // Schützengräben: Die 4-m-Quadrate, die einen Graben berühren, werden aus dem Gelände-Netz genommen (Loch) und durch ein feineres Netz ersetzt: Oberfläche auf Geländehöhe, dazwischen
+  // der abgesenkte Gang mit senkrechten Wänden und Stufen. So ragt das Gelände nirgends in den Graben, und es gibt keine Löcher (Quadrate sind vorher auf eine Höhe eingeebnet).
+  const holes = new Set(), PS = TER.pits || [];
+  for (const q of PS) { const ix0 = Math.floor((q.x - 0.01 + Hf) / Cc), ix1 = Math.floor((q.x1 + 0.01 + Hf) / Cc), iz0 = Math.floor((q.z - 0.01 + Hf) / Cc), iz1 = Math.floor((q.z1 + 0.01 + Hf) / Cc);
+    for (let iz = iz0; iz <= iz1; iz++) for (let ix = ix0; ix <= ix1; ix++) holes.add(iz * (N - 1) + ix); }
+  for (let iz = 0; iz < N - 1; iz++) for (let ix = 0; ix < N - 1; ix++) { if (holes.has(iz * (N - 1) + ix)) continue; const a = iz * N + ix, b = a + 1, c = a + N, d = a + N + 1; idx.push(a, c, b, b, c, d); }   // gleiche Diagonale wie groundY()
+  const xp = [], xc = [], xu = [], xn = [], xi = [], base0 = N * N;
+  if (holes.size) {
+    const colAt = (x, z, o) => { const fx = (x + Hf) / Cc, fz = (z + Hf) / Cc, ix = Math.max(0, Math.min(N - 2, Math.floor(fx))), iz = Math.max(0, Math.min(N - 2, Math.floor(fz))), u = fx - ix, v = fz - iz;
+      const k = iz * N + ix; return [0, 1, 2].map(c => (col[3 * k + c] * (1 - u) + col[3 * (k + 1) + c] * u) * (1 - v) + (col[3 * (k + N) + c] * (1 - u) + col[3 * (k + N + 1) + c] * u) * v); };
+    const lvlAt = (x, z) => { for (const q of PS) { if (x < q.x || z < q.z || x >= q.x1 || z >= q.z1) continue; return q.d.charCodeAt(Math.floor((z - q.z) / q.q) * q.nx + Math.floor((x - q.x) / q.q)) - 48; } return 0; };
+    const stOf = (x, z) => { for (const q of PS) if (x >= q.x && z >= q.z && x < q.x1 && z < q.z1) return q.st; return 0.35; };
+    const EARTH = [0.92, 0.55, 0.36], FLOOR = [0.9, 0.56, 0.36];
+    const quadN = (P, nrm, cols, uvs) => {                                                // Viereck mit eigenen Eckpunkten und fester Normale
+      const o = base0 + xp.length / 3;
+      for (let i = 0; i < 4; i++) { xp.push(P[i][0], P[i][1], P[i][2]); xc.push(cols[i][0], cols[i][1], cols[i][2]); xu.push(uvs[i][0], uvs[i][1]); xn.push(nrm[0], nrm[1], nrm[2]); }
+      const e1 = [P[1][0] - P[0][0], P[1][1] - P[0][1], P[1][2] - P[0][2]], e2 = [P[2][0] - P[0][0], P[2][1] - P[0][1], P[2][2] - P[0][2]];
+      const cx_ = e1[1] * e2[2] - e1[2] * e2[1], cy_ = e1[2] * e2[0] - e1[0] * e2[2], cz_ = e1[0] * e2[1] - e1[1] * e2[0];
+      if (cx_ * nrm[0] + cy_ * nrm[1] + cz_ * nrm[2] >= 0) xi.push(o, o + 1, o + 2, o, o + 2, o + 3); else xi.push(o, o + 2, o + 1, o, o + 3, o + 2);
+    };
+    const uvOf = (x, z) => [(x + Hf) / (2 * Hf), (z + Hf) / (2 * Hf)];
+    const brk = (a0, a1, org, step, q) => { const L = [a0, a1]; for (const p of PS) { const o = org(p); for (let k = Math.ceil((a0 - o) / step(p) + 1e-6); o + k * step(p) < a1 - 1e-6; k++) { const v = o + k * step(p); if (v > a0 + 1e-6) L.push(v); } } L.sort((a, b) => a - b); return L.filter((v, i) => i === 0 || v - L[i - 1] > 1e-5); };
+    for (const key of holes) {
+      const iz = Math.floor(key / (N - 1)), ix = key % (N - 1), X0 = -Hf + ix * Cc, Z0 = -Hf + iz * Cc;
+      const xs = brk(X0, X0 + Cc, p => p.x, p => p.q), zs = brk(Z0, Z0 + Cc, p => p.z, p => p.q);
+      const yAt = (x, z, lv) => groundBase(x, z) - lv * stOf(x, z);
+      for (let j = 0; j < zs.length - 1; j++) for (let i = 0; i < xs.length - 1; i++) {
+        const xa = xs[i], xb = xs[i + 1], za = zs[j], zb = zs[j + 1], mx = (xa + xb) / 2, mz = (za + zb) / 2, lv = lvlAt(mx, mz), st = stOf(mx, mz);
+        const C4 = [[xa, za], [xa, zb], [xb, zb], [xb, za]], T4 = C4.map(([x, z]) => [x, yAt(x, z, lv), z]);
+        quadN(T4, [0, 1, 0], C4.map(([x, z]) => lv ? FLOOR.map(v => v * (0.92 + 0.08 * Math.sin(x * 3 + z * 5))) : colAt(x, z)), C4.map(([x, z]) => uvOf(x, z)));
+        for (const [dx, dz] of [[1, 0], [0, 1]]) {                                         // Wand zum +x- bzw. +z-Nachbarn, wenn dessen Oberfläche anders hoch liegt
+          const nx_ = mx + dx * ((xb - xa) / 2 + 0.01), nz_ = mz + dz * ((zb - za) / 2 + 0.01), lv2 = lvlAt(nx_, nz_);
+          if (lv2 === lv) continue;
+          const e = dx ? [[xb, za], [xb, zb]] : [[xa, zb], [xb, zb]], hi = lv < lv2 ? 0 : 1;   // hi=0: wir sind höher (kleinere Stufe)
+          const ya = [yAt(e[0][0], e[0][1], lv), yAt(e[1][0], e[1][1], lv)], yb = [yAt(e[0][0], e[0][1], lv2), yAt(e[1][0], e[1][1], lv2)];
+          const nrm = dx ? [hi === 0 ? 1 : -1, 0, 0] : [0, 0, hi === 0 ? 1 : -1];
+          const P = [[e[0][0], ya[0], e[0][1]], [e[1][0], ya[1], e[1][1]], [e[1][0], yb[1], e[1][1]], [e[0][0], yb[0], e[0][1]]];
+          const along = (dx ? [e[0][1], e[1][1]] : [e[0][0], e[1][0]]).map(v => (v + Hf) / (2 * Hf)), hv = P.map(q => (q[1] + 40) / (2 * Hf));
+          quadN(P, nrm, P.map((q, k) => EARTH.map(v => v * (0.72 + 0.28 * Math.min(1, Math.max(0, (q[1] - Math.min(ya[0], yb[0])) / Math.max(0.05, Math.abs(ya[0] - yb[0]))))))), [[along[0], hv[0]], [along[1], hv[1]], [along[1], hv[2]], [along[0], hv[3]]]);
+        }
+      }
+    }
+  }
   const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-  g.setIndex(idx); g.computeVertexNormals();
+  const pos2 = new Float32Array(pos.length + xp.length), col2 = new Float32Array(col.length + xc.length), uv2 = new Float32Array(uv.length + xu.length);
+  pos2.set(pos); pos2.set(xp, pos.length); col2.set(col); col2.set(xc, col.length); uv2.set(uv); uv2.set(xu, uv.length);
+  g.setAttribute('position', new THREE.BufferAttribute(pos2, 3)); g.setAttribute('color', new THREE.BufferAttribute(col2, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv2, 2));
+  g.setIndex(idx.concat(xi)); g.computeVertexNormals();
+  if (xn.length) { const na = g.attributes.normal.array; for (let i = 0; i < xn.length; i++) na[base0 * 3 + i] = xn[i]; g.attributes.normal.needsUpdate = true; }
   const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ map: T.grass(), vertexColors: true })); m.frustumCulled = false; return m;
 }
 // Felder, Wege und Plätze liegen nur Zentimeter über dem Gelände und überlappen sich (Kreuzungen, Plätze auf Wegen). Damit sie nicht flackern (Z-Fighting), schreiben sie keine Tiefe und werden in fester Reihenfolge
@@ -4254,7 +4331,8 @@ function buildWorld(penR) {
   { const B = { W: new Batch(), R: new Batch(), D: new Batch(), S: new Batch() };
     glassList = [];
     for (const h of houses) addBuilding(B, h);
-    for (const p of props) { addProp(B, p); if (p.s) { const rr = ROUND_PROP[p.k]; if (rr) solids.circles.push({ x: p.x, z: p.z, r: rr }); else solids.boxes.push({ x: p.x, z: p.z, hw: p.w / 2, hd: p.d / 2, h: p.h || 9 }); } }   // runde Gegenstände (Brunnen, Schober, Silo) blockieren rund, nicht eckig (gleich wie auf dem Server)
+    addTrenches(B);
+    for (const p of props) { addProp(B, p); if (p.s) { const rr = ROUND_PROP[p.k]; if (rr) solids.circles.push({ x: p.x, z: p.z, r: rr }); else solids.boxes.push({ x: p.x, z: p.z, hw: p.w / 2, hd: p.d / 2, h: p.h || 9, vm: p.k === 'trench' ? VAULT_MAX_TRENCH : 0, tr: p.k === 'trench' }); } }   // runde Gegenstände (Brunnen, Schober, Silo) blockieren rund, nicht eckig (gleich wie auf dem Server)
     for (const tr of treeList) { addTree(B.S, tr); solids.circles.push({ x: tr.x, z: tr.z, r: TREE_TRUNK_R[tr.k] * tr.s }); }   // Positionen kommen vom Server; die Sperre ist so dick wie der sichtbare Stamm
     const lm = map => new THREE.MeshLambertMaterial(map ? { map, vertexColors: true } : { vertexColors: true });
     for (const [b, mat] of [[B.W, lm(T.wallB())], [B.R, lm(T.roofB())], [B.D, lm(T.woodB())], [B.S, lm()]]) if (!b.empty) scene.add(b.mesh(mat));
@@ -4922,10 +5000,10 @@ function blockedAt(x, z, rad) {
 function tryMantle() {
   const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rad = 0.5;
   let hit = null; for (let d = 0.4; d <= 1.15 && !hit; d += 0.05) hit = blockedAt(pos.x + fx * d, pos.z + fz * d, 0.05);   // erstes Hindernis vor dir (bis ca. 1,1 m Abstand; dünne Zäune werden nicht übersprungen)
-  if (!hit || !(hit.hw !== undefined) || (hit.h || 9) > VAULT_MAX_H) return false;           // nur niedrige Kästen (Zäune, Ballen), keine Häuser, Bäume, Teich
+  if (!hit || !(hit.hw !== undefined) || (hit.h || 9) > (hit.vm || VAULT_MAX_H)) return false;           // nur niedrige Kästen (Zäune, Ballen), keine Häuser, Bäume, Teich
   for (let d = 0.7; d <= 3.2; d += 0.1) {                                                       // erste freie Stelle hinter dem Hindernis
     const x = pos.x + fx * d, z = pos.z + fz * d;
-    if (!blockedAt(x, z, rad)) { mantle = { t: 0, x0: pos.x, z0: pos.z, x1: x, z1: z }; return true; }
+    if (!blockedAt(x, z, rad)) { const y0 = groundY(pos.x, pos.z), y1 = groundY(x, z); mantle = { t: 0, x0: pos.x, z0: pos.z, x1: x, z1: z, y0, y1, T: VAULT_T + (Math.abs(y1 - y0) > 0.5 ? 0.3 : 0) }; return true; }
   }
   return false;
 }
@@ -4933,10 +5011,11 @@ function move(dt) {
   if (me.quad != null) { driveQuad(dt); return; }                          // auf dem Quad: eigene Fahrphysik
   const riding = me.cow !== null;
   if (mantle) {                                                            // Kletterbewegung: Kamera hebt sich über das Hindernis und kommt auf der anderen Seite herunter
-    mantle.t += dt; const k = Math.min(1, mantle.t / VAULT_T), e = k * k * (3 - 2 * k);
+    mantle.t += dt; const k = Math.min(1, mantle.t / mantle.T), e = k * k * (3 - 2 * k);
     pos.x = mantle.x0 + (mantle.x1 - mantle.x0) * e; pos.z = mantle.z0 + (mantle.z1 - mantle.z0) * e;
-    jy = Math.max(0.0001, VAULT_PEAK * Math.sin(Math.PI * k)); vy = 0; crouch = false; prone = false; moving = true;
-    if (k >= 1) { mantle = null; jy = 0; landK = 0.6; sStep(false); resolveCollisions(0.5); }
+    const dy = mantle.y1 - mantle.y0, feet = mantle.y0 + dy * e + (VAULT_PEAK + Math.max(0, dy) * 0.5) * Math.sin(Math.PI * k);   // Füße: von der Starthöhe zur Zielhöhe (Graben <-> Gelände), dazu der Bogen über das Hindernis
+    jy = Math.max(0.0001, feet - groundY(pos.x, pos.z)); vy = 0; crouch = false; prone = false; moving = true;
+    if (k >= 1) { mantle = null; jy = 0; landK = 0.6; sStep(false); resolveCollisions(0.5); lastGY = null; camLag = 0; }
     return;
   }
   const down = !!me.dn;                                                    // niedergeschossen: nur kriechen
@@ -4978,6 +5057,17 @@ function move(dt) {
     }
   }
   resolveCollisions(riding ? 1.2 : 0.5);
+  // Stufen und Gräben: springt der Boden unter den Füßen (Grabenkante, Stufe), wird daraus ein Fall bzw. ein weiches Nachziehen der Kamera (kleine Stufen bis 0,45 m)
+  const gNow = groundY(pos.x, pos.z);
+  if (lastGY !== null && !riding && !swim && !down) {
+    const dg = gNow - lastGY;
+    if (Math.abs(dg) > 0.1 && Math.abs(dg) < 3) {
+      if (jy > 0 || vy > 0) { jy -= dg; if (jy <= 0) { jy = 0; vy = 0; landK = 1; sStep(false); } }                                 // in der Luft: Füße bleiben auf ihrer Höhe
+      else if (Math.abs(dg) <= 0.45) camLag -= dg;                                                                                   // kleine Stufe: Füße springen, die Kamera gleitet nach
+      else if (dg < 0) { jy = -dg; vy = 0; }                                                                                         // Absatz: du fällst
+    }
+  }
+  lastGY = gNow;
 }
 // Spieler (Radius rad) aus Gebäuden, Hindernissen, Bäumen, Kühen und Quads herausschieben
 function resolveCollisions(rad) {
@@ -5493,9 +5583,10 @@ function buildMinimap() {
       g.fillStyle = '#f7eed8'; g.fillRect(cx - (nz !== 0 ? dw / 2 : 0.7), cz - (nz !== 0 ? 0.7 : dw / 2), nz !== 0 ? dw : 1.4, nz !== 0 ? 1.4 : dw);
     }
   }
+  if (TER && TER.pits) { g.fillStyle = '#4b3a28'; for (const q of TER.pits) for (let b = 0; b < q.nz; b++) for (let a = 0; a < q.nx; a++) if (q.d.charCodeAt(b * q.nx + a) > 48) g.fillRect(q.x + a * q.q - 0.2, q.z + b * q.q - 0.2, q.q + 0.4, q.q + 0.4); }   // Schützengräben
   for (const p of props) {                                                    // Hindernisse (Zäune als dünne Striche, Rest als kleine Kästen)
     if (p.k === 'fence') { g.fillStyle = '#5d4630'; g.fillRect(p.x - Math.max(p.w, 0.5) / 2, p.z - Math.max(p.d, 0.5) / 2, Math.max(p.w, 0.5), Math.max(p.d, 0.5)); }
-    else if (p.s || p.k === 'silo' || p.k === 'well') { g.fillStyle = p.k === 'silo' ? '#9aa0a6' : '#6b5b48'; g.fillRect(p.x - p.w / 2, p.z - p.d / 2, p.w, p.d); }
+    else if (p.k !== 'trench' && (p.s || p.k === 'silo' || p.k === 'well')) { g.fillStyle = p.k === 'silo' ? '#9aa0a6' : '#6b5b48'; g.fillRect(p.x - p.w / 2, p.z - p.d / 2, p.w, p.d); }
   }
   pens.forEach((pn, t) => {                                                   // Gehege in Teamfarbe; die Torseite bleibt offen
     const R = PENR, col = '#' + COL[t % 3].toString(16).padStart(6, '0'); g.fillStyle = col; g.globalAlpha = 0.28; g.fillRect(pn.x - R, pn.z - R, R * 2, R * 2); g.globalAlpha = 1;
@@ -5690,13 +5781,14 @@ function loop(t) {
   { const canLean = alive && !down && !riding && !onQuad() && !sprinting && !mantle && !isSwim(), lt = canLean ? (keys.KeyE ? 1 : 0) - (keys.KeyQ ? 1 : 0) : 0;
     leanK += (lt - leanK) * Math.min(1, dt * 11);
     const st = alive && isSwim() ? pondInfo.level - 1.1 - groundY(pos.x, pos.z) : 0;                   // im Teich: nur Kopf und Brust über Wasser
-    swimOff += (st - swimOff) * Math.min(1, dt * 7); if (!alive) swimOff = 0; }
+    swimOff += (st - swimOff) * Math.min(1, dt * 7); if (!alive) swimOff = 0;
+    camLag *= Math.exp(-dt * 9); if (Math.abs(camLag) < 0.002 || !alive) camLag = 0; }
   if (onQuad()) {                                                          // Sitzposition auf dem Quad: leicht hinter der Mitte, Kamera folgt dem Hang weich
     const qg = quadMesh[me.quad], qy = qg ? qg.position.y : groundY(pos.x, pos.z), tkc = isTrac(), eyeQ = tkc ? 2.2 : 1.62, offQ = tkc ? 0.85 : 0.38;
     qCamY += (qy + eyeQ - qCamY) * Math.min(1, dt * 14); if (Math.abs(qCamY - qy - eyeQ) > 2) qCamY = qy + eyeQ;
     const sv = Math.min(1, Math.abs(qSpd) / vMaxOf());
     camera.position.set(pos.x + Math.sin(qHead) * offQ, qCamY + Math.sin(t * 0.09) * (tkc ? 0.02 : 0.012) * sv, pos.z + Math.cos(qHead) * (tkc ? offQ : 0.3));
-  } else { const lo = leanK * LEAN_OFF; camera.position.set(pos.x + Math.cos(yaw) * lo, groundY(pos.x, pos.z) + swimOff + eyeH() + jy, pos.z - Math.sin(yaw) * lo); }
+  } else { const lo = leanK * LEAN_OFF; camera.position.set(pos.x + Math.cos(yaw) * lo, groundY(pos.x, pos.z) + swimOff + eyeH() + jy + camLag, pos.z - Math.sin(yaw) * lo); }
   const shk = supp * 0.006 + boomShake * 0.03;                                       // Suppression: Kamera zittert leicht
   camRoll *= Math.exp(-dt * 9);                                    // Kippen klingt schnell ab
   camera.rotation.set(aimPitch + (Math.random() - 0.5) * shk, aimYaw + (Math.random() - 0.5) * shk, camRoll - leanK * 0.14);

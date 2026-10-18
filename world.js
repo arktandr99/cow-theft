@@ -9,6 +9,7 @@
 //   - Das Dorf liegt auf halbem Weg dazwischen (beide Teams gleich weit entfernt): Dorfplatz an der Kreuzung, Querstraße mit Kirche an einem Ende,
 //     Häuser stehen an den Straßen mit der Tür zur Straße.
 //   - Bauernhöfe (3 bis 4) liegen abseits der Straße, jeder mit eigenem Weg zur Dorfstraße, Feldern und Obstgarten.
+//   - Schützengräben (7 pro Karte, gerade oder Zickzack) liegen auf ebenem, freiem Land und sind 1,4 m in den Boden eingelassen (siehe 3b und pitDepth()).
 // Was sich ändert: Lage der beiden Gehege (zufällig verteilt, mit Mindestabstand; auch welches Team auf welcher Seite liegt), Verlauf der Straßen mit
 // Bögen zu den Toren, Größe und Lage des Dorfes, Kirche (Nord oder Süd), Höfen, Teich, Hügeln, Wäldern, Feldern, Häusern, Items.
 // Nach dem Erzeugen prüft check(), ob man von Gehege zu Gehege, zu jedem Hof und zu jedem Item zu Fuß kommt; sonst wird neu gewürfelt.
@@ -104,7 +105,8 @@ function generate(cfg, seed) {
   const houses = [], props = [], trees = [], fields = [], occ = [], fieldWish = [], orchards = [];
   const PROP = {                                                                           // Kind: [Höhe, blockiert Bewegung, blockiert Schüsse]
     fence: [1.1, 1, 0], hay: [1.5, 1, 1], stack: [3.4, 1, 1], well: [3.0, 1, 1], silo: [10.5, 1, 1], wood: [1.2, 1, 1],
-    wagon: [1.3, 1, 1], trough: [0.7, 1, 1], bench: [0.9, 0, 0], lamp: [4.2, 0, 0], sign: [2.4, 0, 0]
+    wagon: [1.3, 1, 1], trough: [0.7, 1, 1], bench: [0.9, 0, 0], lamp: [4.2, 0, 0], sign: [2.4, 0, 0],
+    trench: [1.4, 1, 0]                                                // Schützengraben: Wallstücke (1,5 m hoch) und Laufbretter am Boden des Ganges
   };
   const addOcc = (x, z, hw, hd) => occ.push({ x, z, hw, hd });
   PEN.forEach(p => addOcc(p.x, p.z, 34, 40));                                              // Gehege samt Vorplatz bleiben frei von Bauten und Bäumen
@@ -347,6 +349,7 @@ function generate(cfg, seed) {
     const k = sstep(250, 300, Math.max(Math.abs(x), Math.abs(z)));                         // bewaldeter Randwall
     return h + (EDGE_H - h) * k;
   };
+  const pitSys = [];                                                                         // Schützengräben (siehe 3b): Zellraster mit Stufen 0..4, Tiefe = Stufe * 0,35 m
   const G = new Int16Array(N * N);
   let hmax = -1e9;
   for (let iz = 0; iz < N; iz++) for (let ix = 0; ix < N; ix++) {
@@ -355,7 +358,19 @@ function generate(cfg, seed) {
   }
   hmax /= 100;
   // Höhe an einer Stelle: Dreiecke wie im Client (Diagonale von (ix+1,iz) nach (ix,iz+1))
-  function groundY(x, z) {
+  // Tiefe eines Grabens an einer Stelle (0 außerhalb): Zellraster jedes Grabens, Stufe 0..4 mal 0,35 m
+  function pitDepth(x, z) {
+    for (let i = 0; i < pitSys.length; i++) {
+      const s = pitSys[i];
+      if (x < s.x || z < s.z || x >= s.x1 || z >= s.z1) continue;
+      const lv = s.d.charCodeAt(Math.floor((z - s.z) / s.q) * s.nx + Math.floor((x - s.x) / s.q)) - 48;
+      return lv > 0 ? lv * s.step : 0;
+    }
+    return 0;
+  }
+  const nearPit = (x, z, m = 2) => { for (let i = 0; i < pitSys.length; i++) { const s = pitSys[i]; if (x > s.x - m && x < s.x1 + m && z > s.z - m && z < s.z1 + m) return true; } return false; };
+  function groundY(x, z) { return groundBase(x, z) - pitDepth(x, z); }
+  function groundBase(x, z) {
     let fx = (x + HALF) / CELL, fz = (z + HALF) / CELL;
     if (fx < 0) fx = 0; else if (fx > N - 1.000001) fx = N - 1.000001;
     if (fz < 0) fz = 0; else if (fz > N - 1.000001) fz = N - 1.000001;
@@ -456,6 +471,81 @@ function generate(cfg, seed) {
       box(cur, c0 + h0, base, top);
     }
     b.wb = wb; b.gl = gl;
+  }
+  // ---------- 3b. Schützengräben ----------
+  // Ein Graben ist in den Boden eingelassen: ein 1,8 m breiter Gang (2 Zellen à 0,9 m) liegt 1,4 m unter dem Gelände, Gerade oder Zickzack. Wer steht, schaut mit Kopf und Schultern
+  // über den Rand und kann schießen (Augen 1,7 m); wer hockt (Augen 1,2 m, Kopf 1,35 m) ist unter der Kante gedeckt. Die offenen Enden haben vier Stufen (je 0,35 m), an den Seiten
+  // kommt man nur durch Klettern (Vorwärts + Leertaste) hinein und hinaus. Die Höhe des Bodens wird in groundY() abgezogen (pitDepth), damit Server, Client, Bots und Schüsse dasselbe sehen.
+  // Rund um den Gang liegt ein 0,9 m breiter Ring aus unsichtbaren Sperrkästen (Spieler und Bots laufen nicht einfach in die Kante), die Mündungen bleiben frei.
+  { const TQ = 0.9, DSTEP = 0.35, MAXL = 4, key = (a, b) => a + ',' + b;
+    const makeShape = () => {                                                                  // Zellen eines Grabens (Gang 2 Zellen breit); Rückgabe: free, mouth
+      const zig = R() < 0.65, nSeg = zig ? 2 + pick(3) : 1, free = new Set();
+      let xc = 0, zz = 0, dir = R() < 0.5 ? 1 : -1, xe = 0;
+      const z0 = 0; let zl = 0;
+      for (let i = 0; i < nSeg; i++) {
+        const len = zig ? 6 + pick(5) : 13 + pick(9); xe = xc + len - 1;
+        for (let cx = xc; cx <= xe; cx++) for (let dz = 0; dz < 2; dz++) free.add(key(cx, zz + dz));
+        zl = zz;
+        if (i < nSeg - 1) {
+          const nz = zz + dir * (3 + pick(3)), lo = Math.min(zz, nz), hi = Math.max(zz, nz) + 1;
+          for (let cz = lo; cz <= hi; cz++) for (let dx = 0; dx < 2; dx++) free.add(key(xe - 1 + dx, cz));
+          zz = nz; xc = xe - 1; if (R() < 0.8) dir = -dir;
+        }
+      }
+      return { free, mouth: [[-1, z0], [-1, z0 + 1], [xe + 1, zl], [xe + 1, zl + 1]] };
+    };
+    const rot = (cx, cz, r, m) => { let a = m ? -cx : cx, b = cz; for (let i = 0; i < r; i++) { const t = a; a = -b; b = t; } return [a, b]; };
+    const cellOf = k => k.split(',').map(Number);
+    const want = 7; let tries = 0;
+    while (pitSys.length < want && tries++ < 1500) {
+      const sh = makeShape(), r = pick(4), m = R() < 0.5;
+      const free = new Set(), mouth = new Set(), wall = new Set();
+      for (const k of sh.free) { const [a, b] = cellOf(k), [c, d] = rot(a, b, r, m); free.add(key(c, d)); }
+      for (const [a, b] of sh.mouth) { const [c, d] = rot(a, b, r, m); mouth.add(key(c, d)); }
+      for (const k of free) { const [a, b] = cellOf(k); for (let da = -1; da <= 1; da++) for (let db = -1; db <= 1; db++) { const kk = key(a + da, b + db); if (!free.has(kk) && !mouth.has(kk)) wall.add(kk); } }
+      let mnA = 1e9, mnB = 1e9, mxA = -1e9, mxB = -1e9;
+      for (const k of [...free, ...wall, ...mouth]) { const [a, b] = cellOf(k); mnA = Math.min(mnA, a); mnB = Math.min(mnB, b); mxA = Math.max(mxA, a); mxB = Math.max(mxB, b); }
+      const nx = mxA - mnA + 1, nz = mxB - mnB + 1, bw = nx * TQ, bd = nz * TQ;
+      let cx, cz;
+      if (tries % 2 === 0 && PEN.length > 1) {                                                 // jeder zweite Versuch: im Niemandsland zwischen zwei Gehegen (Frontlinie)
+        const a = pick(PEN.length), b = (a + 1 + pick(PEN.length - 1)) % PEN.length, P = PEN[a], Q = PEN[b], t = rr(0.3, 0.7), off = rr(-40, 40), dx = Q.x - P.x, dz = Q.z - P.z, len = Math.hypot(dx, dz);
+        cx = P.x + dx * t - dz / len * off; cz = P.z + dz * t + dx / len * off;
+      } else { cx = (R() - 0.5) * 2 * (MAP - 60); cz = (R() - 0.5) * 2 * (MAP - 60); }
+      if (Math.abs(cx) > MAP - 45 || Math.abs(cz) > MAP - 45) continue;
+      const g = { x: cx, z: cz, hw: bw / 2 + 1, hd: bd / 2 + 1 };
+      if (PEN.some(p => Math.hypot(cx - p.x, cz - p.z) < 62) || Math.hypot(cx - L.vx, cz - pzc) < 52) continue;
+      if (Math.hypot(Math.max(Math.abs(pond.x - cx) - g.hw, 0), Math.max(Math.abs(pond.z - cz) - g.hd, 0)) < pond.r + 14) continue;
+      if (occ.some(o => rectGap(g, o) < 7) || boxEdge(g) < 6) continue;
+      if (props.some(p => PROP[p.k][1] && rectGap(g, { x: p.x, z: p.z, hw: p.w / 2, hd: p.d / 2 }) < 6)) continue;
+      if (pitSys.some(t => rectGap(g, { x: t.cx, z: t.cz, hw: t.hw, hd: t.hd }) < 20)) continue;
+      { let lo = 1e9, hi = -1e9; for (let i = 0; i <= 8; i++) for (let j = 0; j <= 8; j++) { const y = groundY(cx - g.hw + 2 * g.hw * i / 8, cz - g.hd + 2 * g.hd * j / 8); lo = Math.min(lo, y); hi = Math.max(hi, y); } if (hi - lo > 1.1) continue; }
+      const i0 = Math.max(0, Math.floor((cx - g.hw - 2 + HALF) / CELL)), i1 = Math.min(N - 1, Math.ceil((cx + g.hw + 2 + HALF) / CELL));
+      const j0 = Math.max(0, Math.floor((cz - g.hd - 2 + HALF) / CELL)), j1 = Math.min(N - 1, Math.ceil((cz + g.hd + 2 + HALF) / CELL));
+      let clash = false; for (let iz = j0; iz <= j1 && !clash; iz++) for (let ix = i0; ix <= i1; ix++) if (claimed.has(iz * N + ix)) { clash = true; break; }
+      if (clash) continue;
+      const gv = Math.round(groundY(cx, cz) * 100);                                           // Gelände unter und um den Graben einebnen (Gitterpunkte, die den Platz berühren)
+      for (let iz = j0; iz <= j1; iz++) for (let ix = i0; ix <= i1; ix++) { G[iz * N + ix] = gv; claimed.set(iz * N + ix, gv); }
+      const ox = cx - (mnA + nx / 2) * TQ, oz = cz - (mnB + nz / 2) * TQ;                      // Zelle (a, b) liegt von ox + a*TQ bis ox + (a+1)*TQ
+      const x0 = Math.round((ox + mnA * TQ) * 1000) / 1000, z0 = Math.round((oz + mnB * TQ) * 1000) / 1000;
+      const dist = new Map(); let fr = [];                                                     // Stufen: Abstand zur nächsten Mündung (4er-Nachbarschaft)
+      for (const k of mouth) { dist.set(k, 0); fr.push(k); }
+      while (fr.length) { const nxt = []; for (const k of fr) { const [a, b] = cellOf(k), d0 = dist.get(k); for (const [da, db] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const kk = key(a + da, b + db); if (free.has(kk) && !dist.has(kk)) { dist.set(kk, d0 + 1); nxt.push(kk); } } } fr = nxt; }
+      let digits = '';
+      for (let b = mnB; b <= mxB; b++) for (let a = mnA; a <= mxA; a++) { const k = key(a, b); digits += free.has(k) ? Math.min(MAXL, dist.has(k) ? dist.get(k) : MAXL) : 0; }
+      pitSys.push({ x: x0, z: z0, q: TQ, nx, nz, d: digits, step: DSTEP, cx, cz, hw: bw / 2, hd: bd / 2, x1: x0 + nx * TQ, z1: z0 + nz * TQ });
+      const wx = a => ox + (a + 0.5) * TQ, wz = b => oz + (b + 0.5) * TQ;
+      { let open = new Map();                                                                  // Ringzellen zu wenigen Rechtecken zusammenfassen: erst Zeilenläufe, dann gleiche Läufe untereinander
+        const out = [];
+        for (let b = mnB; b <= mxB + 1; b++) {
+          const runs = []; if (b <= mxB) { let st = null; for (let a = mnA; a <= mxA + 1; a++) { const on = a <= mxA && wall.has(key(a, b)); if (on && st === null) st = a; else if (!on && st !== null) { runs.push([st, a - 1]); st = null; } } }
+          const nxt = new Map();
+          for (const [a0, a1] of runs) { const kk = a0 + ',' + a1, o = open.get(kk); if (o) { o.b1 = b; nxt.set(kk, o); open.delete(kk); } else { const q = { a0, a1, b0: b, b1: b }; out.push(q); nxt.set(kk, q); } }
+          open = nxt;
+        }
+        for (const q of out) props.push({ k: 'trench', x: r2((wx(q.a0) + wx(q.a1)) / 2), z: r2((wz(q.b0) + wz(q.b1)) / 2), w: r2((q.a1 - q.a0 + 1) * TQ), d: r2((q.b1 - q.b0 + 1) * TQ), h: 1.4, s: 1 });   // Sperrkästen (unsichtbar)
+      }
+      addOcc(cx, cz, g.hw + 1.5, g.hd + 1.5);
+    }
   }
   // Höchster Punkt des Geländes neu bestimmen (durch das Einebnen kann er sich geändert haben)
   hmax = -1e9; for (let i = 0; i < G.length; i++) if (G[i] > hmax) hmax = G[i]; hmax /= 100;
@@ -581,6 +671,7 @@ function generate(cfg, seed) {
   const quads = [];
   { const pz = plazas[0] || { x: 0, z: 0, r: 10 }, cx = pz.x, cz = pz.z;
     const qFree = (x, z) => {
+      if (nearPit(x, z, 4)) return false;
       if (Math.abs(x) > MAP - 20 || Math.abs(z) > MAP - 20) return false;
       if (PEN.some(p => Math.abs(x - p.x) < 36 && Math.abs(z - p.z) < 42)) return false;
       if (Math.hypot(x - pond.x, z - pond.z) < pond.r + 4) return false;
@@ -615,6 +706,7 @@ function generate(cfg, seed) {
       return true;
     };
     const stripFree = (x, z, yaw) => {                                                      // Traktor bei (x, z), Anhänger hinten (+Z bei yaw 0): neun Stichproben entlang des Streifens
+      if (nearPit(x, z, 9)) return false;
       const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
       for (let s = -3; s <= 11; s += 1.75) if (!ptFree(x - fx * s, z - fz * s)) return false;
       return true;
@@ -635,8 +727,8 @@ function generate(cfg, seed) {
   // Teichgrund liegt im Gelände; Fahnenmast-Höhe der Gehege = 0 (eben)
   const b64 = (() => { const b = Buffer.alloc(G.length * 2); for (let i = 0; i < G.length; i++) b.writeInt16LE(G[i], i * 2); return b.toString('base64'); })();
   return {
-    CELL, HALF, N, G, hmax, groundY, houses, props, trees, roads, plazas, fields, pond, pick: PICK, farms: farmInfo, PROP, quads, tractors,
-    terrain: { cell: CELL, half: HALF, n: N, g: b64 }, layout: { stations: stations, vx: r1(L.vx), churchSouth: S > 0, west: teamAt[0], teams: teamAt, pens: PEN.map(p => [r1(p.x), r1(p.z)]), dist: minPenDist }
+    CELL, HALF, N, G, hmax, groundY, pitDepth, nearPit, houses, props, trees, roads, plazas, fields, pond, pick: PICK, farms: farmInfo, PROP, quads, tractors,
+    terrain: { cell: CELL, half: HALF, n: N, g: b64, pits: pitSys.map(t => ({ x: t.x, z: t.z, q: t.q, nx: t.nx, nz: t.nz, d: t.d, st: t.step })) }, layout: { stations: stations, vx: r1(L.vx), churchSouth: S > 0, west: teamAt[0], teams: teamAt, pens: PEN.map(p => [r1(p.x), r1(p.z)]), dist: minPenDist }
   };
 }
 

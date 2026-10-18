@@ -39,7 +39,7 @@ const RESPAWN = +process.env.RESPAWN || 5;
 const MOUNT_R = 4.5;                               // Reichweite zum Aufsteigen auf eine Kuh (Meter)
 const HP = 100;                                    // alle Rollen: 100 HP, wenige Treffer töten
 const PICKUP_RESPAWN = 45;                         // Sekunden bis ein Item wieder erscheint
-const MAX_JUMP = 1.3;                              // größte erlaubte Sprunghöhe (Meter), vom Client gemeldet
+const MAX_JUMP = 2.8;                              // größte erlaubte Sprunghöhe (Meter), vom Client gemeldet
 const SPRINT_RECOVER = 250;                        // ms nach dem Sprinten, bis die Waffe wieder schussbereit ist (wie in Sandstorm)
 const LEG_MULT = 0.75;                             // Beintreffer richten weniger Schaden an
 // KI-Spieler: jedes Team wird mit Bots bis zu dieser Größe aufgefüllt (echte Spieler zählen mit).
@@ -621,7 +621,7 @@ function rayTerrain(o, d, tMax) {
   if (o[1] > HMAX + 0.5 && d[1] >= 0) return 1e9;                      // über allem Gelände und nach oben: kein Treffer möglich
   let tPrev = 0;
   for (;;) {
-    const t = Math.min(tPrev + 1.5, tMax);
+    const t = Math.min(tPrev + (WORLD.nearPit(o[0] + d[0] * tPrev, o[2] + d[2] * tPrev, 3) ? 0.3 : 1.5), tMax);   // in der Nähe eines Schützengrabens feiner abtasten (Kante nur 0,9 m dick)
     const x = o[0] + d[0] * t, y = o[1] + d[1] * t, z = o[2] + d[2] * t;
     if (y <= groundY(x, z)) {
       let lo = tPrev, hi = t;
@@ -1114,6 +1114,7 @@ function moveNade(n, h) {
     if (inside(nx, ny, nz, b)) { n.vz *= -0.4; n.vx *= 0.8; n.vy *= 0.8; nz = n.z; n.bounced++; }
   }
   nx = Math.max(-MAP, Math.min(MAP, nx)); nz = Math.max(-MAP, Math.min(MAP, nz));
+  if (WORLD.pitDepth(n.x, n.z) - WORLD.pitDepth(nx, nz) > 0.3 && ny < groundY(nx, nz) + R) { n.vx *= -0.4; n.vz *= -0.4; nx = n.x; nz = n.z; n.bounced++; }   // Granate im Graben prallt an der Grabenwand ab, statt hinaufzuspringen
   const gy = groundY(nx, nz) + R;
   if (ny < gy) {                                                     // Boden: Abprall mit Reibung, am Ende bleibt sie liegen
     ny = gy; if (n.vy < -1.2) { n.vy *= -0.3; n.bounced++; } else n.vy = 0;
