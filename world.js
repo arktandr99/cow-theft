@@ -9,7 +9,7 @@
 //   - Das Dorf liegt auf halbem Weg dazwischen (beide Teams gleich weit entfernt): Dorfplatz an der Kreuzung, Querstraße mit Kirche an einem Ende,
 //     Häuser stehen an den Straßen mit der Tür zur Straße.
 //   - Bauernhöfe (3 bis 4) liegen abseits der Straße, jeder mit eigenem Weg zur Dorfstraße, Feldern und Obstgarten.
-//   - Schützengräben (7 pro Karte, gerade oder Zickzack) liegen auf ebenem, freiem Land und sind 1,4 m in den Boden eingelassen (siehe 3b und pitDepth()).
+//   - Schützengräben liegen in wechselnden Längen und Formen auf ebenem, freiem Land und sind 1,4 m in den Boden eingelassen (siehe 3b und pitDepth()).
 // Was sich ändert: Lage der beiden Gehege (zufällig verteilt, mit Mindestabstand; auch welches Team auf welcher Seite liegt), Verlauf der Straßen mit
 // Bögen zu den Toren, Größe und Lage des Dorfes, Kirche (Nord oder Süd), Höfen, Teich, Hügeln, Wäldern, Feldern, Häusern, Items.
 // Nach dem Erzeugen prüft check(), ob man von Gehege zu Gehege, zu jedem Hof und zu jedem Item zu Fuß kommt; sonst wird neu gewürfelt.
@@ -478,26 +478,35 @@ function generate(cfg, seed) {
   // kommt man nur durch Klettern (Vorwärts + Leertaste) hinein und hinaus. Die Höhe des Bodens wird in groundY() abgezogen (pitDepth), damit Server, Client, Bots und Schüsse dasselbe sehen.
   // Rund um den Gang liegt ein 0,9 m breiter Ring aus unsichtbaren Sperrkästen (Spieler und Bots laufen nicht einfach in die Kante), die Mündungen bleiben frei.
   { const TQ = 0.9, DSTEP = 0.35, MAXL = 4, key = (a, b) => a + ',' + b;
-    const makeShape = () => {                                                                  // Zellen eines Grabens (Gang 2 Zellen breit); Rückgabe: free, mouth
-      const zig = R() < 0.65, nSeg = zig ? 2 + pick(3) : 1, free = new Set();
-      let xc = 0, zz = 0, dir = R() < 0.5 ? 1 : -1, xe = 0;
-      const z0 = 0; let zl = 0;
+    const makeShape = () => {                                                                  // Gänge aus geraden, gestaffelten, gezackten und verzweigten Segmenten
+      const style = pick(6), free = new Set(), mouths = [], width = style === 5 ? 3 : 2;
+      const addH = (x0, x1, z) => { for (let x = x0; x <= x1; x++) for (let dz = 0; dz < width; dz++) free.add(key(x, z + dz)); };
+      let xc = 0, zz = 0, dir = R() < 0.5 ? 1 : -1, xe = 0, zl = 0, branchAt = 0, branchZ = 0;
+      const nSeg = style === 0 ? 1 : style === 1 ? 1 : style === 2 ? 2 + pick(3) : style === 3 ? 3 : 2 + pick(4);
       for (let i = 0; i < nSeg; i++) {
-        const len = zig ? 6 + pick(5) : 13 + pick(9); xe = xc + len - 1;
-        for (let cx = xc; cx <= xe; cx++) for (let dz = 0; dz < 2; dz++) free.add(key(cx, zz + dz));
-        zl = zz;
+        const len = style === 0 ? 14 + pick(15) : style === 1 ? 28 + pick(25) : (i === 0 ? 8 + pick(9) : 5 + pick(11));
+        xe = xc + len - 1; addH(xc, xe, zz); zl = zz;
+        if (style === 5 && i === Math.floor(nSeg / 2)) { branchAt = xc + Math.floor(len * (0.35 + R() * 0.3)); branchZ = zz; }
         if (i < nSeg - 1) {
-          const nz = zz + dir * (3 + pick(3)), lo = Math.min(zz, nz), hi = Math.max(zz, nz) + 1;
-          for (let cz = lo; cz <= hi; cz++) for (let dx = 0; dx < 2; dx++) free.add(key(xe - 1 + dx, cz));
-          zz = nz; xc = xe - 1; if (R() < 0.8) dir = -dir;
+          const nz = zz + dir * (3 + pick(style === 3 ? 8 : 6)), lo = Math.min(zz, nz), hi = Math.max(zz, nz) + width - 1;
+          for (let cz = lo; cz <= hi; cz++) for (let dx = 0; dx < width; dx++) free.add(key(xe - 1 + dx, cz));
+          zz = nz; xc = xe - 1;
+          if (style === 3) dir = Math.sign(dir); else if (R() < (style === 4 ? 0.35 : 0.75)) dir = -dir;
         }
       }
-      return { free, mouth: [[-1, z0], [-1, z0 + 1], [xe + 1, zl], [xe + 1, zl + 1]] };
+      for (let dz = 0; dz < width; dz++) { mouths.push([-1, dz], [xe + 1, zl + dz]); }
+      if (style === 5 && branchAt) {
+        const sign = R() < 0.5 ? -1 : 1, bl = 6 + pick(11), endZ = branchZ + sign * bl;
+        for (let z = Math.min(branchZ, endZ); z <= Math.max(branchZ + width - 1, endZ + width - 1); z++) for (let x = branchAt; x < branchAt + width; x++) free.add(key(x, z));
+        const mouthZ = sign > 0 ? endZ + width : endZ - 1;
+        for (let dx = 0; dx < width; dx++) mouths.push([branchAt + dx, mouthZ]);
+      }
+      return { free, mouth: mouths };
     };
     const rot = (cx, cz, r, m) => { let a = m ? -cx : cx, b = cz; for (let i = 0; i < r; i++) { const t = a; a = -b; b = t; } return [a, b]; };
     const cellOf = k => k.split(',').map(Number);
-    const want = 7; let tries = 0;
-    while (pitSys.length < want && tries++ < 1500) {
+    const want = 12; let tries = 0;
+    while (pitSys.length < want && tries++ < 5000) {
       const sh = makeShape(), r = pick(4), m = R() < 0.5;
       const free = new Set(), mouth = new Set(), wall = new Set();
       for (const k of sh.free) { const [a, b] = cellOf(k), [c, d] = rot(a, b, r, m); free.add(key(c, d)); }
@@ -507,10 +516,10 @@ function generate(cfg, seed) {
       for (const k of [...free, ...wall, ...mouth]) { const [a, b] = cellOf(k); mnA = Math.min(mnA, a); mnB = Math.min(mnB, b); mxA = Math.max(mxA, a); mxB = Math.max(mxB, b); }
       const nx = mxA - mnA + 1, nz = mxB - mnB + 1, bw = nx * TQ, bd = nz * TQ;
       let cx, cz;
-      if (tries % 2 === 0 && PEN.length > 1) {                                                 // jeder zweite Versuch: im Niemandsland zwischen zwei Gehegen (Frontlinie)
+      if (tries % 4 === 0 && PEN.length > 1) {                                                 // jeder vierte Versuch: Niemandsland zwischen Gehegen (Frontlinie)
         const a = pick(PEN.length), b = (a + 1 + pick(PEN.length - 1)) % PEN.length, P = PEN[a], Q = PEN[b], t = rr(0.3, 0.7), off = rr(-40, 40), dx = Q.x - P.x, dz = Q.z - P.z, len = Math.hypot(dx, dz);
         cx = P.x + dx * t - dz / len * off; cz = P.z + dz * t + dx / len * off;
-      } else { cx = (R() - 0.5) * 2 * (MAP - 60); cz = (R() - 0.5) * 2 * (MAP - 60); }
+      } else { const a = R() * Math.PI * 2, r = Math.sqrt(rr(105 * 105, (MAP - 70) * (MAP - 70))); cx = Math.cos(a) * r; cz = Math.sin(a) * r; } // übrige Versuche bevorzugen offene Außenflächen statt das Dorf
       if (Math.abs(cx) > MAP - 45 || Math.abs(cz) > MAP - 45) continue;
       const g = { x: cx, z: cz, hw: bw / 2 + 1, hd: bd / 2 + 1 };
       if (PEN.some(p => Math.hypot(cx - p.x, cz - p.z) < 62) || Math.hypot(cx - L.vx, cz - pzc) < 52) continue;
