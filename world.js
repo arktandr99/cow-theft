@@ -484,7 +484,7 @@ function generate(cfg, seed) {
       let xc = 0, zz = 0, dir = R() < 0.5 ? 1 : -1, xe = 0, zl = 0, branchAt = 0, branchZ = 0;
       const nSeg = style === 0 ? 1 : style === 1 ? 1 : style === 2 ? 2 + pick(3) : style === 3 ? 3 : 2 + pick(4);
       for (let i = 0; i < nSeg; i++) {
-        const len = style === 0 ? 14 + pick(15) : style === 1 ? 28 + pick(25) : (i === 0 ? 8 + pick(9) : 5 + pick(11));
+        const len = style === 0 ? 24 + pick(21) : style === 1 ? 44 + pick(32) : (i === 0 ? 11 + pick(13) : 8 + pick(13));
         xe = xc + len - 1; addH(xc, xe, zz); zl = zz;
         if (style === 5 && i === Math.floor(nSeg / 2)) { branchAt = xc + Math.floor(len * (0.35 + R() * 0.3)); branchZ = zz; }
         if (i < nSeg - 1) {
@@ -496,7 +496,7 @@ function generate(cfg, seed) {
       }
       for (let dz = 0; dz < width; dz++) { mouths.push([-1, dz], [xe + 1, zl + dz]); }
       if (style === 5 && branchAt) {
-        const sign = R() < 0.5 ? -1 : 1, bl = 6 + pick(11), endZ = branchZ + sign * bl;
+        const sign = R() < 0.5 ? -1 : 1, bl = 10 + pick(15), endZ = branchZ + sign * bl;
         for (let z = Math.min(branchZ, endZ); z <= Math.max(branchZ + width - 1, endZ + width - 1); z++) for (let x = branchAt; x < branchAt + width; x++) free.add(key(x, z));
         const mouthZ = sign > 0 ? endZ + width : endZ - 1;
         for (let dx = 0; dx < width; dx++) mouths.push([branchAt + dx, mouthZ]);
@@ -505,9 +505,22 @@ function generate(cfg, seed) {
     };
     const rot = (cx, cz, r, m) => { let a = m ? -cx : cx, b = cz; for (let i = 0; i < r; i++) { const t = a; a = -b; b = t; } return [a, b]; };
     const cellOf = k => k.split(',').map(Number);
-    const want = 12; let tries = 0;
+    const GROUP_SIZE = 4, GROUPS = 4, want = GROUP_SIZE * GROUPS, centers = [], groupAttempts = [];
+    const newCenter = () => {
+      for (let n = 0; n < 80; n++) {
+        const a = R() * Math.PI * 2, r = Math.sqrt(rr(125 * 125, (MAP - 75) * (MAP - 75))), c = { x: Math.cos(a) * r, z: Math.sin(a) * r };
+        if (PEN.some(p => Math.hypot(c.x - p.x, c.z - p.z) < 92) || Math.hypot(c.x - L.vx, c.z - pzc) < 100) continue;
+        if (centers.some(q => Math.hypot(c.x - q.x, c.z - q.z) < 125)) continue;
+        return c;
+      }
+      return { x: rr(-150, 150), z: rr(-150, 150) };
+    };
+    let tries = 0;
     while (pitSys.length < want && tries++ < 5000) {
       const sh = makeShape(), r = pick(4), m = R() < 0.5;
+      const group = Math.floor(pitSys.length / GROUP_SIZE);
+      if (!centers[group] || groupAttempts[group] > 180) { centers[group] = newCenter(); groupAttempts[group] = 0; }
+      groupAttempts[group]++;
       const free = new Set(), mouth = new Set(), wall = new Set();
       for (const k of sh.free) { const [a, b] = cellOf(k), [c, d] = rot(a, b, r, m); free.add(key(c, d)); }
       for (const [a, b] of sh.mouth) { const [c, d] = rot(a, b, r, m); mouth.add(key(c, d)); }
@@ -516,17 +529,14 @@ function generate(cfg, seed) {
       for (const k of [...free, ...wall, ...mouth]) { const [a, b] = cellOf(k); mnA = Math.min(mnA, a); mnB = Math.min(mnB, b); mxA = Math.max(mxA, a); mxB = Math.max(mxB, b); }
       const nx = mxA - mnA + 1, nz = mxB - mnB + 1, bw = nx * TQ, bd = nz * TQ;
       let cx, cz;
-      if (tries % 4 === 0 && PEN.length > 1) {                                                 // jeder vierte Versuch: Niemandsland zwischen Gehegen (Frontlinie)
-        const a = pick(PEN.length), b = (a + 1 + pick(PEN.length - 1)) % PEN.length, P = PEN[a], Q = PEN[b], t = rr(0.3, 0.7), off = rr(-40, 40), dx = Q.x - P.x, dz = Q.z - P.z, len = Math.hypot(dx, dz);
-        cx = P.x + dx * t - dz / len * off; cz = P.z + dz * t + dx / len * off;
-      } else { const a = R() * Math.PI * 2, r = Math.sqrt(rr(105 * 105, (MAP - 70) * (MAP - 70))); cx = Math.cos(a) * r; cz = Math.sin(a) * r; } // übrige Versuche bevorzugen offene Außenflächen statt das Dorf
+      { const a = R() * Math.PI * 2, off = rr(18, 48); cx = centers[group].x + Math.cos(a) * off; cz = centers[group].z + Math.sin(a) * off; } // mehrere Gräben bilden ein zufälliges System im selben Landstrich
       if (Math.abs(cx) > MAP - 45 || Math.abs(cz) > MAP - 45) continue;
       const g = { x: cx, z: cz, hw: bw / 2 + 1, hd: bd / 2 + 1 };
       if (PEN.some(p => Math.hypot(cx - p.x, cz - p.z) < 62) || Math.hypot(cx - L.vx, cz - pzc) < 52) continue;
       if (Math.hypot(Math.max(Math.abs(pond.x - cx) - g.hw, 0), Math.max(Math.abs(pond.z - cz) - g.hd, 0)) < pond.r + 14) continue;
       if (occ.some(o => rectGap(g, o) < 7) || boxEdge(g) < 6) continue;
       if (props.some(p => PROP[p.k][1] && rectGap(g, { x: p.x, z: p.z, hw: p.w / 2, hd: p.d / 2 }) < 6)) continue;
-      if (pitSys.some(t => rectGap(g, { x: t.cx, z: t.cz, hw: t.hw, hd: t.hd }) < 20)) continue;
+      if (pitSys.some(t => rectGap(g, { x: t.cx, z: t.cz, hw: t.hw, hd: t.hd }) < (t.group === group ? 5 : 38))) continue;
       { let lo = 1e9, hi = -1e9; for (let i = 0; i <= 8; i++) for (let j = 0; j <= 8; j++) { const y = groundY(cx - g.hw + 2 * g.hw * i / 8, cz - g.hd + 2 * g.hd * j / 8); lo = Math.min(lo, y); hi = Math.max(hi, y); } if (hi - lo > 1.1) continue; }
       const i0 = Math.max(0, Math.floor((cx - g.hw - 2 + HALF) / CELL)), i1 = Math.min(N - 1, Math.ceil((cx + g.hw + 2 + HALF) / CELL));
       const j0 = Math.max(0, Math.floor((cz - g.hd - 2 + HALF) / CELL)), j1 = Math.min(N - 1, Math.ceil((cz + g.hd + 2 + HALF) / CELL));
@@ -541,7 +551,7 @@ function generate(cfg, seed) {
       while (fr.length) { const nxt = []; for (const k of fr) { const [a, b] = cellOf(k), d0 = dist.get(k); for (const [da, db] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const kk = key(a + da, b + db); if (free.has(kk) && !dist.has(kk)) { dist.set(kk, d0 + 1); nxt.push(kk); } } } fr = nxt; }
       let digits = '';
       for (let b = mnB; b <= mxB; b++) for (let a = mnA; a <= mxA; a++) { const k = key(a, b); digits += free.has(k) ? Math.min(MAXL, dist.has(k) ? dist.get(k) : MAXL) : 0; }
-      pitSys.push({ x: x0, z: z0, q: TQ, nx, nz, d: digits, step: DSTEP, cx, cz, hw: bw / 2, hd: bd / 2, x1: x0 + nx * TQ, z1: z0 + nz * TQ });
+      pitSys.push({ x: x0, z: z0, q: TQ, nx, nz, d: digits, step: DSTEP, cx, cz, hw: bw / 2, hd: bd / 2, x1: x0 + nx * TQ, z1: z0 + nz * TQ, group });
       const wx = a => ox + (a + 0.5) * TQ, wz = b => oz + (b + 0.5) * TQ;
       { let open = new Map();                                                                  // Ringzellen zu wenigen Rechtecken zusammenfassen: erst Zeilenläufe, dann gleiche Läufe untereinander
         const out = [];
