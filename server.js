@@ -1251,7 +1251,7 @@ function buildSolids() {
     for (const f of h.fu) solidBoxes.push({ x: f.x, z: f.z, hw: f.hw, hd: f.hd });          // Möbel
   }
   const ROUND_PROP = { well: 1.2, stack: 2.1, silo: 2.35 };                                                          // runde Gegenstände blockieren rund (Client: dieselben Werte)
-  for (const p of props) if (WORLD.PROP[p.k][1]) { if (ROUND_PROP[p.k]) solidCircles.push({ x: p.x, z: p.z, r: ROUND_PROP[p.k] }); else solidBoxes.push({ x: p.x, z: p.z, hw: p.w / 2, hd: p.d / 2 }); }   // Zäune, Brunnen, Silos, Heu ...
+  for (const p of props) if (p.k !== 'trench' && WORLD.PROP[p.k][1]) { if (ROUND_PROP[p.k]) solidCircles.push({ x: p.x, z: p.z, r: ROUND_PROP[p.k] }); else solidBoxes.push({ x: p.x, z: p.z, hw: p.w / 2, hd: p.d / 2 }); }   // Unsichtbare Graben-Sperrkästen blockieren Spieler und Bots nicht
   solidCircles.push({ x: WORLD.pond.x, z: WORLD.pond.z, r: WORLD.pond.r });                                          // Teich
   PEN.forEach((p, t) => {
     const s = PEN_R * 2, side = (w, d, x, z) => solidBoxes.push({ x: p.x + x, z: p.z + z, hw: w / 2, hd: d / 2 });

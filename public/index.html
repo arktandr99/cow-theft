@@ -4332,7 +4332,7 @@ function buildWorld(penR) {
     glassList = [];
     for (const h of houses) addBuilding(B, h);
     addTrenches(B);
-    for (const p of props) { addProp(B, p); if (p.s) { const rr = ROUND_PROP[p.k]; if (rr) solids.circles.push({ x: p.x, z: p.z, r: rr }); else solids.boxes.push({ x: p.x, z: p.z, hw: p.w / 2, hd: p.d / 2, h: p.h || 9, vm: p.k === 'trench' ? VAULT_MAX_TRENCH : 0, tr: p.k === 'trench' }); } }   // runde Gegenstände (Brunnen, Schober, Silo) blockieren rund, nicht eckig (gleich wie auf dem Server)
+    for (const p of props) { addProp(B, p); if (p.s && p.k !== 'trench') { const rr = ROUND_PROP[p.k]; if (rr) solids.circles.push({ x: p.x, z: p.z, r: rr }); else solids.boxes.push({ x: p.x, z: p.z, hw: p.w / 2, hd: p.d / 2, h: p.h || 9 }); } }   // Unsichtbare Graben-Sperrkästen sind keine Kollision: man fällt über die Kante in den Graben
     for (const tr of treeList) { addTree(B.S, tr); solids.circles.push({ x: tr.x, z: tr.z, r: TREE_TRUNK_R[tr.k] * tr.s }); }   // Positionen kommen vom Server; die Sperre ist so dick wie der sichtbare Stamm
     const lm = map => new THREE.MeshLambertMaterial(map ? { map, vertexColors: true } : { vertexColors: true });
     for (const [b, mat] of [[B.W, lm(T.wallB())], [B.R, lm(T.roofB())], [B.D, lm(T.woodB())], [B.S, lm()]]) if (!b.empty) scene.add(b.mesh(mat));
