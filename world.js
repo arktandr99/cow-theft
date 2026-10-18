@@ -104,9 +104,9 @@ function generate(cfg, seed) {
   // ---------- 2. Höfe, Kirche, Häuser (Lage) ----------
   const houses = [], props = [], trees = [], fields = [], occ = [], fieldWish = [], orchards = [];
   const PROP = {                                                                           // Kind: [Höhe, blockiert Bewegung, blockiert Schüsse]
-    fence: [1.1, 1, 0], hay: [1.5, 1, 1], stack: [3.4, 1, 1], well: [3.0, 1, 1], silo: [10.5, 1, 1], wood: [1.2, 1, 1],
-    wagon: [1.3, 1, 1], trough: [0.7, 1, 1], bench: [0.9, 0, 0], lamp: [4.2, 0, 0], sign: [2.4, 0, 0],
-    trench: [1.4, 1, 0]                                                // Schützengraben: Wallstücke (1,5 m hoch) und Laufbretter am Boden des Ganges
+    fence: [1.1, 1, 1], hay: [1.5, 1, 1], stack: [3.4, 1, 1], well: [3.0, 1, 1], silo: [10.5, 1, 1], wood: [1.2, 1, 1],
+    wagon: [1.3, 1, 1], trough: [0.7, 1, 1], bench: [0.9, 0, 1], lamp: [4.2, 0, 1], sign: [2.4, 0, 1],
+    trench: [1.4, 1, 1]                                                // Schützengraben: Wallstücke (1,5 m hoch) und Laufbretter am Boden des Ganges
   };
   const addOcc = (x, z, hw, hd) => occ.push({ x, z, hw, hd });
   PEN.forEach(p => addOcc(p.x, p.z, 34, 40));                                              // Gehege samt Vorplatz bleiben frei von Bauten und Bäumen

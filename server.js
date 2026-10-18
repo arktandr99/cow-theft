@@ -272,7 +272,14 @@ function houseShapes(h) {
 }
 function propShapes(p) {
   const x = p.x, z = p.z, y = p.y, out = [], box = (x0, x1, y0, y1, z0, z1) => out.push(bboxOf(x0, x1, y0, y1, z0, z1));
-  if (p.k === 'hay') {                                                              // Rundballen: liegender Zylinder (Radius 0,75) entlang der längeren Seite
+  if (p.k === 'fence') {                                                            // Pfosten und beide sichtbaren Zaunlatten blockieren Geschosse
+    const ax = p.w >= p.d, len = ax ? p.w : p.d, hw = ax ? len / 2 : 0.07, hd = ax ? 0.07 : len / 2;
+    for (const sg of [-1, 1]) {
+      const px = x + (ax ? sg * (len / 2 - 0.07) : 0), pz = z + (ax ? 0 : sg * (len / 2 - 0.07));
+      box(px - 0.07, px + 0.07, y - 0.25, y + 1.15, pz - 0.07, pz + 0.07);
+    }
+    for (const hh of [0.5, 0.95]) box(x - hw, x + hw, y + hh - 0.07, y + hh + 0.07, z - hd, z + hd);
+  } else if (p.k === 'hay') {                                                       // Rundballen: liegender Zylinder (Radius 0,75) entlang der längeren Seite
     const ax = p.w >= p.d, len = ax ? p.w : p.d;
     out.push(shpFrustum(ax ? 0 : 2, [x, y + 0.75, z], (ax ? x : z) - len / 2, (ax ? x : z) + len / 2, 0.73, 0.73));
   } else if (p.k === 'stack') {                                                     // Strohschober: Zylinder (Radius 2,1) mit Kegeldach
@@ -297,7 +304,48 @@ function propShapes(p) {
     }
   } else if (p.k === 'trough') box(x - p.w / 2, x + p.w / 2, y - 0.1, y + 0.61, z - p.d / 2, z + p.d / 2);
   else if (p.k === 'wood') box(x - p.w / 2, x + p.w / 2, y - 0.2, y + 1.25, z - p.d / 2, z + p.d / 2);
-  return out;                                                                       // Zäune, Bänke, Laternen, Schilder: Schüsse gehen hindurch
+  else if (p.k === 'bench') {
+    const ax = p.w >= p.d, len = ax ? p.w : p.d;
+    box(x - (ax ? len / 2 : 0.25), x + (ax ? len / 2 : 0.25), y + 0.465, y + 0.535, z - (ax ? 0.25 : len / 2), z + (ax ? 0.25 : len / 2));
+    for (const sg of [-1, 1]) box(x + (ax ? sg * (len / 2 - 0.2) : 0) - (ax ? 0.04 : 0.25), x + (ax ? sg * (len / 2 - 0.2) : 0) + (ax ? 0.04 : 0.25), y, y + 0.5, z + (ax ? 0 : sg * (len / 2 - 0.2)) - (ax ? 0.25 : 0.04), z + (ax ? 0 : sg * (len / 2 - 0.2)) + (ax ? 0.25 : 0.04));
+  } else if (p.k === 'lamp') {
+    out.push(shpFrustum(1, [x, 0, z], y - 0.2, y + 3.6, 0.07, 0.07));
+    box(x - 0.2, x + 0.2, y + 3.35, y + 3.85, z - 0.2, z + 0.2);
+    out.push(shpFrustum(1, [x, 0, z], y + 3.95, y + 4.25, 0.4, 0));
+  } else if (p.k === 'sign') {
+    box(x - 0.06, x + 0.06, y - 0.2, y + 2.4, z - 0.06, z + 0.06);
+    box(x - 0.75, x + 0.75, y + 1.45, y + 1.95, z - 0.035, z + 0.035);
+  }
+  return out;
+}
+function penShotShapes() {
+  const out = [], box = (x, z, w, d, y) => out.push(bboxOf(x - w / 2, x + w / 2, y - 0.25, y + 1.25, z - d / 2, z + d / 2));
+  PEN.forEach((p, t) => {
+    const s = PEN_R * 2, inner = (p.s || (t === 0 ? 1 : -1)) * PEN_R, outer = -inner, y = groundY(p.x, p.z);
+    box(p.x, p.z - PEN_R, s, 0.2, y); box(p.x, p.z + PEN_R, s, 0.2, y); box(p.x + outer, p.z, 0.2, s, y);
+    const gateHalf = 3, gateSeg = PEN_R - gateHalf, gateOffset = (PEN_R + gateHalf) / 2;
+    box(p.x + inner, p.z - gateOffset, 0.2, gateSeg, y); box(p.x + inner, p.z + gateOffset, 0.2, gateSeg, y);
+    out.push(shpFrustum(1, [p.x, 0, p.z], y + 0.4, y + 9.1, 0.15, 0.15));
+    out.push(shpFrustum(1, [p.x, 0, p.z], y, y + 0.4, 0.55, 0.35));
+    for (let i = 0; i < 3; i++) out.push(shpFrustum(0, [p.x + (outer < 0 ? -1 : 1) * (PEN_R - 2.5), y + 0.8, p.z + (i - 1) * 4], p.x + (outer < 0 ? -1 : 1) * (PEN_R - 2.5) - 0.6, p.x + (outer < 0 ? -1 : 1) * (PEN_R - 2.5) + 0.6, 0.8, 0.8));
+  });
+  return out;
+}
+function trenchShotShapes(terrain) {
+  const out = [];
+  for (const q of (terrain && terrain.pits) || []) {
+    const lv = (a, b) => a < 0 || b < 0 || a >= q.nx || b >= q.nz ? 0 : q.d.charCodeAt(b * q.nx + a) - 48;
+    for (let b = 0; b < q.nz; b++) for (let a = 0; a < q.nx; a++) {
+      const l = lv(a, b); if (!l) continue;
+      const cx = q.x + (a + 0.5) * q.q, cz = q.z + (b + 0.5) * q.q, floor = groundY(cx, cz);
+      for (const [da, db] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const n = lv(a + da, b + db); if (n >= l) continue;
+        const hh = (l - n) * q.st, ex = cx + da * q.q / 2, ez = cz + db * q.q / 2, alongX = da === 0;
+        out.push(bboxOf(ex - (alongX ? q.q / 2 : 0.06 / 2), ex + (alongX ? q.q / 2 : 0.06 / 2), floor, floor + hh, ez - (alongX ? 0.06 / 2 : q.q / 2), ez + (alongX ? 0.06 / 2 : q.q / 2)));
+      }
+    }
+  }
+  return out;
 }
 function treeShape(t) {                                                             // nur der Stamm blockiert (Laub nicht); Maße wie im Client
   const s = t.s, r = [0.28, 0.30, 0.19][t.k] * s, top = [2.4, 3.0, 1.6][t.k] * s;
@@ -316,6 +364,7 @@ function loadWorld(seed) {
   glassPanes = [];                                                                  // Fensterscheiben: das erste Geschoss, das sie trifft, zerstört sie und fliegt weiter
   for (const h of houses) if (h.e && h.gl) for (const g of h.gl) glassPanes.push({ id: glassPanes.length, x: g[0], z: g[1], w: g[2] * 2, d: g[3] * 2, y: g[4], h: g[5], broken: false });
   for (const p of props) shootBoxes.push(...propShapes(p));
+  shootBoxes.push(...penShotShapes(), ...trenchShotShapes(WORLD.terrain));
   treeBoxes = trees.map(treeShape);
   buildSolids(); buildDoors(); buildNav();
   console.log(`Neue Karte #${WORLD.seed}: ${houses.length} Gebäude, ${trees.length} Bäume, ${WORLD.fields.length} Felder, ${WORLD.farms.length} Höfe (${Date.now() - t0} ms${WORLD.attempts > 1 ? ', ' + WORLD.attempts + ' Versuche' : ''})`);
@@ -775,6 +824,11 @@ function stepCows(now) {
 // Jedes Geschoss (bei Schrot jedes Schrotkorn) fliegt mit der Mündungsgeschwindigkeit der Waffe. Wie in Sandstorm fliegt es 0,1 s geradeaus und fällt dann
 // mit 9,81 m/s². Der Flugweg ist eine feste Formel (Start o, Richtung d, Tempo v): Server und Client rechnen dasselbe. Der Server prüft pro Tick das Wegstück.
 const bPos = (b, t) => { const g = Math.max(0, t - DROP_AFTER), w2 = 0.5 * t * t; return [b.o[0] + b.d[0] * b.v * t + (b.wx || 0) * w2, b.o[1] + b.d[1] * b.v * t - 0.5 * GRAVITY * g * g, b.o[2] + b.d[2] * b.v * t + (b.wz || 0) * w2]; };   // wx, wz: seitliche Windbeschleunigung beim Abschuss
+function rayVehicle(o, d, x, z, yaw, hw, hd, y, h) {                         // Schuss in den lokalen Fahrzeugraum drehen und gegen die Fahrzeughülle prüfen
+  const rx = Math.cos(yaw), rz = -Math.sin(yaw), fx = -Math.sin(yaw), fz = -Math.cos(yaw), dx = o[0] - x, dz = o[2] - z;
+  const lo = [dx * rx + dz * rz, o[1], dx * fx + dz * fz], ld = [d[0] * rx + d[2] * rz, d[1], d[0] * fx + d[2] * fz];
+  return rayBox(lo, ld, { x: 0, z: 0, w: hw * 2, d: hd * 2, y, h });
+}
 const r1 = v => Math.round(v * 10) / 10;
 let impQ = [], hitQ = {};                              // pro Tick gesammelte Einschläge (an alle) und Trefferbestätigungen (an die Schützen)
 function breakGlass(g, at) {
@@ -794,6 +848,12 @@ function stepBullet(b, now) {
   let tMax = len, kind = 0, hb = null;                 // Art des Einschlags: 0 Luft, 1 Boden, 2 Haus, 3 Baum, 4 Spieler; hb = getroffene Box
   for (const h of shootBoxes) { const t = rayBox(p0, d, h); if (t < tMax) { tMax = t; kind = 2; hb = h; } }
   for (const tb of treeBoxes) { const t = rayBox(p0, d, tb); if (t < tMax) { tMax = t; kind = 3; hb = tb; } }
+  for (const q of quadList) {
+    const y = groundY(q.x, q.z), tk = q.kind === 1;
+    const t = rayVehicle(p0, d, q.x, q.z, q.yaw, tk ? 1.4 : 0.8, tk ? 2.1 : 1.25, y, tk ? 2.65 : 1.25);
+    if (t < tMax) { tMax = t; kind = 5; hb = null; }
+    if (tk) { const tt = rayVehicle(p0, d, q.ax, q.az, q.ty, 1.5, 3.0, groundY(q.ax, q.az) + 0.25, 1.45); if (tt < tMax) { tMax = tt; kind = 5; hb = null; } }
+  }
   { const tg = rayTerrain(p0, d, tMax); if (tg < tMax) { tMax = tg; kind = 1; hb = null; } }       // das Gelände (Boden, Hügel) stoppt Schüsse ebenfalls
   let best = null, bt = tMax, head = false, zone = 'b';
   for (const q of Object.values(players)) {
@@ -1449,6 +1509,11 @@ function losClear(o, tp) {   // freie Sicht zwischen zwei Punkten? Gebäude, Bau
   let t = 1e9;
   for (const h of shootBoxes) t = Math.min(t, rayBox(o, d, h));
   for (const tb of treeBoxes) t = Math.min(t, rayBox(o, d, tb));
+  for (const q of quadList) {
+    const tk = q.kind === 1;
+    t = Math.min(t, rayVehicle(o, d, q.x, q.z, q.yaw, tk ? 1.4 : 0.8, tk ? 2.1 : 1.25, groundY(q.x, q.z), tk ? 2.65 : 1.25));
+    if (tk) t = Math.min(t, rayVehicle(o, d, q.ax, q.az, q.ty, 1.5, 3.0, groundY(q.ax, q.az) + 0.25, 1.45));
+  }
   if (t > len - 0.5) t = Math.min(t, rayTerrain(o, d, len));                      // Hügel verdecken ebenfalls
   if (t > len - 0.5 && smokes.length && smokeBlocks(o, tp, Date.now())) return false;   // Rauchwolken verdecken auch
   return t > len - 0.5;

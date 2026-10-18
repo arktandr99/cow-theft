@@ -747,6 +747,9 @@ function sImpact(pt, kind, t, d) {
       tone(o, { t, dur: 0.12, f: 150, f2: 60, vol: 0.5 * v });
     }
     playGroup('imp_thud', null, { out: o, t, vol: 0.25 * v, rate: r(), fadeOut: 0.05 });
+  } else if (kind === 5) {
+    if (!playGroup('imp_thud', null, { out: o, t, vol: 0.8 * v, rate: 0.8 * r(), fadeOut: 0.05 })) noise(o, { t, dur: 0.1, type: 'bandpass', f: 1500, q: 2, vol: 0.75 * v });
+    if (d < 7) noise(o, { t, dur: 0.04, type: 'highpass', f: 4200, vol: 0.25 * v });
   } else {
     const lo = kind === 3 ? 0.8 : 1;                              // Baum klingt tiefer als Hauswand
     if (!playGroup('imp_wood', null, { out: o, t, vol: 0.95 * v, rate: lo * r(), fadeOut: 0.05 })) {
@@ -4479,6 +4482,9 @@ function spawnImpactFx(sh, e, kind, face, st) {
   if (kind === 4) {                                              // Körper
     if (d < 0.75 || d > 120) return;                             // dich selbst zeigt die Treffer-Anzeige, nicht eine Wolke vor der Kamera
     spawnBlood(p, dir, p[1] - groundY(p[0], p[2]) > 1.45);
+  } else if (kind === 5) {                                       // Fahrzeug: kleine Splitter am Einschlag
+    if (d > 160) return;
+    spawnDust(p, [-dir[0], 0.2, -dir[2]], 0.35, 3, 0xa9a79b);
   } else if (kind === 1) {                                       // Boden / Hügel
     if (d > 160 || st.holes >= 6) return;
     const g = groundY(p[0], p[2]), q = [p[0], g, p[2]], surf = surfaceAt(p[0], p[2]), n = groundNormal(p[0], p[2]);
