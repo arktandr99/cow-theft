@@ -5003,7 +5003,7 @@ function tryMantle() {
   if (!hit || !(hit.hw !== undefined) || (hit.h || 9) > (hit.vm || VAULT_MAX_H)) return false;           // nur niedrige Kästen (Zäune, Ballen), keine Häuser, Bäume, Teich
   for (let d = 0.7; d <= 3.2; d += 0.1) {                                                       // erste freie Stelle hinter dem Hindernis
     const x = pos.x + fx * d, z = pos.z + fz * d;
-    if (!blockedAt(x, z, rad)) { const y0 = groundY(pos.x, pos.z), y1 = groundY(x, z); mantle = { t: 0, x0: pos.x, z0: pos.z, x1: x, z1: z, y0, y1, T: VAULT_T + (Math.abs(y1 - y0) > 0.5 ? 0.3 : 0) }; return true; }
+    if (!blockedAt(x, z, rad)) { const y0 = groundY(pos.x, pos.z), y1 = groundY(x, z); mantle = { t: 0, x0: pos.x, z0: pos.z, x1: x, z1: z, y0, y1, T: hit.tr ? 1.2 : VAULT_T + (Math.abs(y1 - y0) > 0.5 ? 0.3 : 0) }; return true; }
   }
   return false;
 }
@@ -5094,7 +5094,7 @@ function resolveCollisions(rad) {
       for (const w of h.wl) boxOut(w[0], w[1], w[2], w[3]);
       for (const f of h.fu) boxOut(f.x, f.z, f.hw, f.hd);
     }
-    for (const b of solids.boxes) if (!b.tr || pitDepth(pos.x, pos.z) === 0) boxOut(b.x, b.z, b.hw, b.hd);
+    for (const b of solids.boxes) if (!b.tr) boxOut(b.x, b.z, b.hw, b.hd);
     for (const c of solids.circles) circleOut(c.x, c.z, c.r);
     for (const id in cMesh) { // Kühe ohne Reiter sind Hindernisse
       const d = cMesh[id].userData.t;
