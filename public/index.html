@@ -48,6 +48,10 @@ input{font-size:16px;padding:8px;margin:8px}
 #cook.hot i{background:#f44}
 #cook span{color:#fff}
 #mm{position:absolute;top:0;right:0;width:240px;height:240px;box-shadow:-2px 2px 8px #000a}
+body.maplarge #hud{z-index:8}
+#mapbg{display:none;position:fixed;inset:0;z-index:8;background:rgba(0,0,0,.78);pointer-events:auto}
+body.maplarge #mapbg{display:block}
+body.maplarge #mm{position:fixed;left:50%;top:50%;right:auto;transform:translate(-50%,-50%);width:min(88vmin,90vw);height:min(88vmin,90vw);z-index:9;box-shadow:0 8px 36px #000;border:2px solid #ddd}
 body.obs #bl,body.obs #ammo,body.obs #cross,body.obs #hint,body.obs #cmp{display:none}
 body.obs #dead>div:first-child{display:none}
 #flashfx{position:fixed;inset:0;z-index:3;pointer-events:none;opacity:0;background:#fff}
@@ -158,7 +162,7 @@ body.obs #radio{display:none!important}
     <div class="col nade"><h3>Granaten (2 pro Leben · Taste G)</h3><div id="nades"></div><h3 style="margin-top:12px">Aufsatz (Hauptwaffe)</h3><div id="atts"></div></div>
   </div>
   <div><button id="play" disabled style="font-size:22px;margin-top:10px">Lade Waffen …</button><button id="cancel" style="display:none;font-size:18px">Abbrechen</button><button id="setbtn" style="font-size:18px">⚙ Einstellungen (F2)</button><button id="obsbtn" style="font-size:18px" title="Ohne Spielfigur zuschauen">👁 Nur zuschauen</button></div>
-  <p id="ctrl" style="font-size:13px;color:#ccc">WASD laufen · Leertaste springen · {crouch} hocken · {prone} hinlegen · {leanL} / {leanR} seitlich lehnen · Leertaste + W vor einem Zaun = klettern · im Teich schwimmen · Shift+W sprinten (danach kurz nicht schussbereit) · Maus zielen · Linksklick schießen · Rechtsklick zielen/zoomen · Scharfschützen: beim Zielen Shift = Atem anhalten<br>1 / 2 oder Mausrad: Waffe wechseln · R nachladen (noch eine Patrone im Lauf = <b>kürzer</b>, leergeschossen = zusätzlich Durchladen · <b>zweimal schnell R</b> = schneller, aber das Magazin wird fallen gelassen) · {mode} Feuermodus · {laser} Laser an/aus (mit Laser-Aufsatz) · {ability} Fähigkeit (Sani: Medkit, MG-Schütze: Munition, Pionier: Sandsack-Deckung, Scharfschütze: Gegner markieren) · G Granate halten = kochen, loslassen = werfen · {mount} Interaktion (Kuh / Quad besteigen, Türen öffnen und schließen; bei einem niedergeschossenen Kameraden gedrückt halten = wiederbeleben) · {radio} Funk an das Team (danach 1–6) · geduckt oder liegend regungslos an einem Heuballen = getarnt · L Ausrüstung für den nächsten Respawn · Tab Scoreboard · M Ton an/aus · F4 Grafik · <b>F2 Einstellungen</b> (Empfindlichkeit, Sichtfeld, Lautstärken, Tasten frei belegbar)</p>
+  <p id="ctrl" style="font-size:13px;color:#ccc">WASD laufen · Leertaste springen · {crouch} hocken · {prone} hinlegen · {leanL} / {leanR} seitlich lehnen · Leertaste + W vor einem Zaun = klettern · im Teich schwimmen · Shift+W sprinten (danach kurz nicht schussbereit) · Maus zielen · Linksklick schießen · Rechtsklick zielen/zoomen · Scharfschützen: beim Zielen Shift = Atem anhalten<br>1 / 2 oder Mausrad: Waffe wechseln · R nachladen (noch eine Patrone im Lauf = <b>kürzer</b>, leergeschossen = zusätzlich Durchladen · <b>zweimal schnell R</b> = schneller, aber das Magazin wird fallen gelassen) · {mode} Feuermodus · {laser} Laser an/aus (mit Laser-Aufsatz) · {ability} Fähigkeit (Sani: Medkit, MG-Schütze: Munition, Pionier: Sandsack-Deckung, Scharfschütze: Gegner markieren) · G Granate halten = kochen, loslassen = werfen · {mount} Interaktion (Kuh / Quad besteigen, Türen öffnen und schließen; bei einem niedergeschossenen Kameraden gedrückt halten = wiederbeleben) · {radio} Funk an das Team (danach 1–6) · geduckt oder liegend regungslos an einem Heuballen = getarnt · L Ausrüstung für den nächsten Respawn · Tab Scoreboard · M große Karte · P Ton an/aus · F4 Grafik · <b>F2 Einstellungen</b> (Empfindlichkeit, Sichtfeld, Lautstärken, Tasten frei belegbar)</p>
 </div>
 <div id="settings"><div id="setbox"></div></div>
 <div id="dead"><div>Ausgeschaltet – Respawn in <span id="rs">5</span> s</div><small>Mit L Klasse und Waffen für den nächsten Einsatz wählen</small><small id="specinfo"></small></div>
@@ -173,7 +177,7 @@ body.obs #radio{display:none!important}
 <div id="suppfx"></div>
 <div id="sb"></div>
 <div id="vig"></div>
-<div id="hud"><div id="top"></div><div id="log"></div><div id="jlog"></div><div id="cross"></div><div id="mate"></div><div id="hint"></div><div id="bl"></div><div id="ammo"></div><canvas id="cmp" width="560" height="46"></canvas><canvas id="mm" width="240" height="240"></canvas><div id="envhud"></div><div id="radio"></div><div id="cook"><i></i><span></span></div></div>
+<div id="hud"><div id="top"></div><div id="log"></div><div id="jlog"></div><div id="cross"></div><div id="mate"></div><div id="hint"></div><div id="bl"></div><div id="ammo"></div><canvas id="cmp" width="560" height="46"></canvas><canvas id="mm" width="240" height="240"></canvas><div id="mapbg"></div><div id="envhud"></div><div id="radio"></div><div id="cook"><i></i><span></span></div></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
@@ -211,7 +215,7 @@ const EN = {
   'Schaden': 'Damage', 'Feuerrate': 'Fire rate', 'Reichweite': 'Range', 'Rückstoß': 'Recoil', 'Tempo': 'Velocity', 'gedämpft': 'suppressed', 'Zielfernrohr': 'scope',
   // Tasten (Einstellungen)
   'Vorwärts': 'Forward', 'Rückwärts': 'Backward', 'Links': 'Left', 'Rechts': 'Right', 'Springen': 'Jump', 'Hocken': 'Crouch', 'Sprinten / Atem anhalten': 'Sprint / hold breath', 'Nachladen': 'Reload', 'Fähigkeit': 'Ability',
-  'Interaktion (Kuh / Quad, Wiederbeleben)': 'Interact (cow / vehicle, revive)', 'Granate': 'Grenade', 'Feuermodus': 'Fire mode', 'Ausrüstung wählen': 'Choose loadout', 'Scoreboard': 'Scoreboard', 'Ton an/aus': 'Sound on/off',
+  'Interaktion (Kuh / Quad, Wiederbeleben)': 'Interact (cow / vehicle, revive)', 'Granate': 'Grenade', 'Feuermodus': 'Fire mode', 'Ausrüstung wählen': 'Choose loadout', 'Scoreboard': 'Scoreboard', 'Ton an/aus': 'Sound on/off', 'Große Karte öffnen/schließen': 'Open/close large map',
   'Minimap Norden/Blick': 'Minimap north / view', 'Funk (Schnellrufe an das Team)': 'Radio (quick calls to the team)', 'Links lehnen (halten)': 'Lean left (hold)', 'Rechts lehnen (halten)': 'Lean right (hold)', 'Hinlegen / aufstehen': 'Go prone / stand up',
   'Leertaste': 'Space', 'Shift links': 'Left Shift', 'Shift rechts': 'Right Shift', 'Strg links': 'Left Ctrl', 'Strg rechts': 'Right Ctrl', 'Alt links': 'Left Alt', 'Alt rechts': 'Right Alt', 'Feststell': 'Caps Lock', 'Rück': 'Backspace', 'Taste drücken …': 'Press a key …',
   // Einstellungen
@@ -355,7 +359,7 @@ for (const b of document.querySelectorAll('#langsel button')) {
   if (b.dataset.l === LANG) b.className = 'sel';
   b.addEventListener('click', () => { if (b.dataset.l === LANG) return; try { localStorage.setItem('ct_lang', b.dataset.l); } catch (e) { } window.onbeforeunload = null; location.reload(); });
 }
-const CTRL_EN = 'WASD move · Space jump · {crouch} crouch · {prone} go prone · {leanL} / {leanR} lean sideways · Space + W in front of a fence = climb · swim in the pond · Shift+W sprint (afterwards briefly not ready to shoot) · Mouse aim · Left click shoot · Right click aim/zoom · Snipers: Shift while aiming = hold breath<br>1 / 2 or mouse wheel: switch weapon · R reload (a round still in the chamber = <b>shorter</b>, fully empty = additional chambering · <b>double-tap R</b> = faster, but the magazine is dropped) · {mode} fire mode · {laser} laser on/off (with the laser attachment) · {ability} ability (Medic: medkit, Gunner: ammo, Engineer: sandbag cover, Sniper: mark enemies) · G grenade hold = cook, release = throw · {mount} interact (ride cows / quad / tractor, load cows onto the trailer, open and close doors; hold it at a downed teammate = revive) · {radio} radio to the team (then 1–6) · crouching or lying motionless at a hay bale = camouflaged · L loadout for the next respawn · Tab scoreboard · M sound on/off · F4 graphics · <b>F2 Settings</b> (sensitivity, field of view, volumes, freely assignable keys)';
+const CTRL_EN = 'WASD move · Space jump · {crouch} crouch · {prone} go prone · {leanL} / {leanR} lean sideways · Space + W in front of a fence = climb · swim in the pond · Shift+W sprint (afterwards briefly not ready to shoot) · Mouse aim · Left click shoot · Right click aim/zoom · Snipers: Shift while aiming = hold breath<br>1 / 2 or mouse wheel: switch weapon · R reload (a round still in the chamber = <b>shorter</b>, fully empty = additional chambering · <b>double-tap R</b> = faster, but the magazine is dropped) · {mode} fire mode · {laser} laser on/off (with the laser attachment) · {ability} ability (Medic: medkit, Gunner: ammo, Engineer: sandbag cover, Sniper: mark enemies) · G grenade hold = cook, release = throw · {mount} interact (ride cows / quad / tractor, load cows onto the trailer, open and close doors; hold it at a downed teammate = revive) · {radio} radio to the team (then 1–6) · crouching or lying motionless at a hay bale = camouflaged · L loadout for the next respawn · Tab scoreboard · M large map · P sound on/off · F4 graphics · <b>F2 Settings</b> (sensitivity, field of view, volumes, freely assignable keys)';
 
 const COL = [0xd33333, 0x3366dd, 0x27b248], TEAM_CLS = ['r', 'b', 'g'], TEAM_NAME = ['Rot', 'Blau', 'Grün'], ROLE_NAME = { sturm: 'Sturmsoldat', mg: 'MG-Schütze', scharf: 'Scharfschütze', sani: 'Sanitäter', hirte: 'Hirte', pionier: 'Pionier' };
 const ROLE_KEYS = ['sturm', 'mg', 'scharf', 'sani', 'hirte', 'pionier'];
@@ -378,8 +382,8 @@ const JUMP_V = 4.6, GRAV = 13;                 // ca. 0,8 m hoch, ca. 0,7 s in d
 
 // ---------- Einstellungen (werden im Browser gespeichert, Taste F2) ----------
 // Tasten: Aktion -> Standardtaste. canon() übersetzt eine gedrückte Taste in die Standardtaste ihrer Aktion, so läuft der übrige Code unverändert weiter.
-const KB_DEF = { fwd: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', jump: 'Space', crouch: 'ControlLeft', sprint: 'ShiftLeft', reload: 'KeyR', ability: 'KeyX', mount: 'KeyF', nade: 'KeyG', mode: 'KeyB', laser: 'KeyV', loadout: 'KeyL', score: 'Tab', mute: 'KeyM', mapn: 'KeyN', radio: 'KeyC', leanL: 'KeyQ', leanR: 'KeyE', prone: 'AltLeft', s1: 'Digit1', s2: 'Digit2', s3: 'Digit3' };
-const KB_NAME = { fwd: 'Vorwärts', back: 'Rückwärts', left: 'Links', right: 'Rechts', jump: 'Springen', crouch: 'Hocken', sprint: 'Sprinten / Atem anhalten', reload: 'Nachladen', ability: 'Fähigkeit', mount: 'Interaktion (Kuh / Quad, Wiederbeleben)', nade: 'Granate', mode: 'Feuermodus', laser: 'Laser an/aus', loadout: 'Ausrüstung wählen', score: 'Scoreboard', mute: 'Ton an/aus', mapn: 'Minimap Norden/Blick', radio: 'Funk (Schnellrufe an das Team)', leanL: 'Links lehnen (halten)', leanR: 'Rechts lehnen (halten)', prone: 'Hinlegen / aufstehen', s1: 'Hauptwaffe', s2: 'Pistole', s3: 'Mistgabel' };
+const KB_DEF = { fwd: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', jump: 'Space', crouch: 'ControlLeft', sprint: 'ShiftLeft', reload: 'KeyR', ability: 'KeyX', mount: 'KeyF', nade: 'KeyG', mode: 'KeyB', laser: 'KeyV', loadout: 'KeyL', score: 'Tab', mute: 'KeyP', map: 'KeyM', mapn: 'KeyN', radio: 'KeyC', leanL: 'KeyQ', leanR: 'KeyE', prone: 'AltLeft', s1: 'Digit1', s2: 'Digit2', s3: 'Digit3' };
+const KB_NAME = { fwd: 'Vorwärts', back: 'Rückwärts', left: 'Links', right: 'Rechts', jump: 'Springen', crouch: 'Hocken', sprint: 'Sprinten / Atem anhalten', reload: 'Nachladen', ability: 'Fähigkeit', mount: 'Interaktion (Kuh / Quad, Wiederbeleben)', nade: 'Granate', mode: 'Feuermodus', laser: 'Laser an/aus', loadout: 'Ausrüstung wählen', score: 'Scoreboard', mute: 'Ton an/aus', map: 'Große Karte öffnen/schließen', mapn: 'Minimap Norden/Blick', radio: 'Funk (Schnellrufe an das Team)', leanL: 'Links lehnen (halten)', leanR: 'Rechts lehnen (halten)', prone: 'Hinlegen / aufstehen', s1: 'Hauptwaffe', s2: 'Pistole', s3: 'Mistgabel' };
 const SET_DEF = { sens: 1, zsens: 1, invY: false, fov: 75, res: 1, far: 440, vol: { master: 1, w: 1, e: 1, c: 1, u: 1 }, kb: {} };
 function loadSettings() {
   const S = JSON.parse(JSON.stringify(SET_DEF));
@@ -389,6 +393,7 @@ function loadSettings() {
     if (typeof o.invY === 'boolean') S.invY = o.invY;
     if (o.vol) for (const k in S.vol) if (typeof o.vol[k] === 'number' && isFinite(o.vol[k])) S.vol[k] = Math.max(0, Math.min(1, o.vol[k]));
     if (o.kb) for (const a in KB_DEF) if (typeof o.kb[a] === 'string' && o.kb[a]) S.kb[a] = o.kb[a];
+    if (S.kb.mute === 'KeyM' && !S.kb.map) S.kb.mute = 'KeyP'; // alte Standardbelegung: M war Ton an/aus
   } catch (e) { /* kein Speicher: Standardwerte */ }
   S.sens = Math.max(0.2, Math.min(4, S.sens)); S.zsens = Math.max(0.2, Math.min(3, S.zsens)); S.fov = Math.max(60, Math.min(110, S.fov)); S.res = Math.max(0.5, Math.min(1, S.res)); S.far = Math.max(200, Math.min(440, S.far));
   return S;
@@ -4925,7 +4930,7 @@ THREE.Material.prototype.onBeforeCompile = function (shader) {
 renderer = new THREE.WebGLRenderer({ antialias: true }); renderer.setPixelRatio(SET.res); renderer.setSize(innerWidth, innerHeight); document.body.appendChild(renderer.domElement);
 addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); if (camera) { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); } });
 document.addEventListener('pointerlockchange', () => locked = document.pointerLockElement === renderer.domElement);
-renderer.domElement.addEventListener('click', () => { if (playing && !locked) renderer.domElement.requestPointerLock(); });
+renderer.domElement.addEventListener('click', () => { if (playing && !largeMap && !locked) renderer.domElement.requestPointerLock(); });
 addEventListener('contextmenu', e => e.preventDefault());
 addEventListener('mousemove', e => {
   if (!locked) return;
@@ -4949,6 +4954,7 @@ addEventListener('keydown', e => {
   if (settingsOpen) { if (e.code === 'Escape') closeSettings(); return; }                    // im Einstellungsmenü keine Spieleingaben
   if (playing && (e.code === 'AltLeft' || e.code === 'AltRight')) e.preventDefault();       // Alt allein würde sonst die Menüleiste des Browsers aktivieren
   const code = canon(e.code);                                                                // gewählte Taste -> Standardtaste ihrer Aktion
+  if (largeMap) { if (code === 'KeyM' || code === 'Escape') setLargeMap(false); return; }
   if (code === 'Tab' && playing) { e.preventDefault(); sb = true; return; }
   if (code === 'Space' && playing) e.preventDefault();   // sonst scrollt/klickt die Seite
   if (menuOpen) { if (code === 'KeyL' || code === 'Escape') closeLoadout(); return; }   // im Ausrüstungsmenü keine Spieleingaben
@@ -4964,7 +4970,8 @@ addEventListener('keydown', e => {
   if (code === 'ControlLeft' && !e.repeat && playing && me && !me.dead && !me.dn && me.cow === null && !isSwim()) { if (prone) { prone = false; crouch = true; } else crouch = !crouch; }   // Hocke an/aus (aus dem Liegen: erst Hocke)
   if (code === 'AltLeft' && !e.repeat && playing && me && !me.dead && !me.dn && me.cow === null && !onQuad() && !isSwim() && !mantle) { prone = !prone; if (prone) crouch = false; }   // Hinlegen / Aufstehen
   if (code === 'KeyN' && playing && !e.repeat) { mmNorth = !mmNorth; addLog(mmNorth ? 'Minimap: Norden oben' : 'Minimap: Blickrichtung oben'); }
-  if (code === 'KeyM' && AC) { muted = !muted; applyVolumes(); addLog(muted ? 'Ton aus' : 'Ton an'); }
+  if (code === 'KeyM' && playing && !e.repeat) { setLargeMap(true); return; }
+  if (code === 'KeyP' && AC) { muted = !muted; applyVolumes(); addLog(muted ? 'Ton aus' : 'Ton an'); }
   if (code === 'F4') { e.preventDefault(); setGfx((GFX.level + 2) % 3, true); }          // Grafik: Hoch -> Mittel -> Aus
   if (code === 'KeyB' && !e.repeat) cycleMode();                                          // Feuermodus wechseln
   if (code === 'KeyV' && !e.repeat && playing && ws && ws.readyState === 1 && me && !me.dead && me.at === 'laser') ws.send('{"t":"laser"}');   // Laser an/aus (der Server merkt es sich und meldet es den anderen Spielern)
@@ -5560,7 +5567,13 @@ function sPop(at, dist) {
 // Oben rechts: du bist in der Mitte, die Karte dreht sich mit deinem Blick (Taste N: Norden oben). Gezeigt werden Gelände, Wege, Felder, Gehege, Gebäude, Bäume und Hindernisse,
 // dazu Kühe, Aufnehmbares, Fahrzeuge und deine Mitspieler. Gegner werden bewusst NICHT angezeigt.
 const MM_K = 2, MM_S = 1.55, MM_R = 120;                           // MM_K: Pixel pro Meter in der Grundkarte, MM_S: Pixel pro Meter auf dem Bildschirm, MM_R: Radius in Pixeln
-let mmBase = null, mmNorth = false;
+let mmBase = null, mmNorth = false, largeMap = false;
+function setLargeMap(open) {
+  largeMap = open; document.body.classList.toggle('maplarge', open);
+  const cv = $('mm'); if (cv) { cv.width = cv.height = open ? 900 : 240; }
+  if (open) { for (const k in keys) keys[k] = false; if (document.pointerLockElement) document.exitPointerLock(); }
+}
+$('mapbg').addEventListener('click', () => setLargeMap(false));
 function buildMinimap() {
   const SZ = Math.round(MAP * 2 * MM_K), c = document.createElement('canvas'); c.width = c.height = SZ; const g = c.getContext('2d');
   { const n = Math.round(MAP * 2), t = document.createElement('canvas'); t.width = t.height = n; const tg = t.getContext('2d'), im = tg.createImageData(n, n), d = im.data;   // Gelände: Gras, Hang schattiert
@@ -5602,10 +5615,10 @@ function buildMinimap() {
 }
 function drawMinimap() {
   const cv = $('mm'); if (!cv || !mmBase || !me) return;
-  const g = cv.getContext('2d'), W = cv.width, cx = W / 2, rot = mmNorth ? 0 : yaw, S = MM_S, px = 1 / S;
+  const g = cv.getContext('2d'), W = cv.width, cx = W / 2, rot = largeMap ? 0 : (mmNorth ? 0 : yaw), S = largeMap ? W / (2 * MAP) : MM_S, px = (largeMap ? 1.5 : 1) / S, centerX = largeMap ? 0 : pos.x, centerZ = largeMap ? 0 : pos.z;
   g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, W, W);
   g.save(); g.beginPath(); g.rect(0, 0, W, W); g.clip(); g.fillStyle = '#26361f'; g.fillRect(0, 0, W, W);   // eckig: die ganze Fläche wird gezeichnet
-  g.translate(cx, cx); g.rotate(rot); g.scale(S, S); g.translate(-pos.x, -pos.z);                       // ab hier: Weltkoordinaten
+  g.translate(cx, cx); g.rotate(rot); g.scale(S, S); g.translate(-centerX, -centerZ);                       // ab hier: Weltkoordinaten
   g.imageSmoothingEnabled = true; g.drawImage(mmBase, -MAP, -MAP, MAP * 2, MAP * 2);
   const dot = (x, z, r, fill, line) => { g.beginPath(); g.arc(x, z, r * px, 0, 7); g.fillStyle = fill; g.fill(); if (line) { g.lineWidth = px * 1.2; g.strokeStyle = line; g.stroke(); } };
   const box = (x, z, r, fill, line) => { g.fillStyle = fill; g.fillRect(x - r * px, z - r * px, 2 * r * px, 2 * r * px); if (line) { g.lineWidth = px * 1.2; g.strokeStyle = line; g.strokeRect(x - r * px, z - r * px, 2 * r * px, 2 * r * px); } };
@@ -5627,8 +5640,8 @@ function drawMinimap() {
   { const nowP = performance.now();                                                                      // Funk-Markierungen (pulsierende Ringe), weit entfernte am Rand
     for (let i = pings.length - 1; i >= 0; i--) {
       const pg = pings[i]; if (nowP > pg.until) { pings.splice(i, 1); continue; }
-      let dx = pg.x - pos.x, dz = pg.z - pos.z; const L = Math.hypot(dx, dz), R = 66, edge = L > R; if (edge) { dx *= R / L; dz *= R / L; }
-      const x = pos.x + dx, z = pos.z + dz, pulse = 1 + 0.3 * Math.sin(nowP / 160);
+      let dx = pg.x - pos.x, dz = pg.z - pos.z; const L = Math.hypot(dx, dz), R = 66, edge = !largeMap && L > R; if (edge) { dx *= R / L; dz *= R / L; }
+      const x = largeMap ? pg.x : pos.x + dx, z = largeMap ? pg.z : pos.z + dz, pulse = 1 + 0.3 * Math.sin(nowP / 160);
       g.save(); g.translate(x, z); g.rotate(rot ? -rot : 0); g.globalAlpha = edge ? 0.7 : 1;
       g.beginPath(); g.arc(0, 0, 7 * px * pulse, 0, 7); g.lineWidth = 2 * px; g.strokeStyle = PING_COL[pg.k]; g.stroke(); g.fillStyle = PING_COL[pg.k]; g.beginPath(); g.arc(0, 0, 2.6 * px, 0, 7); g.fill();
       g.restore();
@@ -5636,8 +5649,8 @@ function drawMinimap() {
   }
   for (const pl of plist || []) { if (pl.i === myId || pl.t !== myTeam || pl.d) continue; if (pl.dn) { box(pl.x, pl.z, 4.2, '#ffffff', '#d02a2a'); g.fillStyle = '#d02a2a'; g.fillRect(pl.x - 2.6 * px, pl.z - 0.7 * px, 5.2 * px, 1.4 * px); g.fillRect(pl.x - 0.7 * px, pl.z - 2.6 * px, 1.4 * px, 5.2 * px); continue; } dot(pl.x, pl.z, 3.6, '#' + COL[(((pl.t | 0) % 3) + 3) % 3].toString(16).padStart(6, '0'), '#fff'); }   // nur Mitspieler
   g.restore();
-  g.save(); g.translate(cx, cx);                                                                         // du selbst: Pfeil in der Mitte, zeigt in Blickrichtung
-  g.rotate(mmNorth ? -yaw : 0); g.beginPath(); g.moveTo(0, -9); g.lineTo(6, 7); g.lineTo(0, 3.5); g.lineTo(-6, 7); g.closePath(); g.fillStyle = '#fff'; g.fill(); g.lineWidth = 1.5; g.strokeStyle = '#000c'; g.stroke(); g.restore();
+  g.save(); g.translate(largeMap ? cx + pos.x * S : cx, largeMap ? cx + pos.z * S : cx);                 // du selbst: auf der großen Karte am Standort, auf der Minimap in der Mitte
+  g.rotate(largeMap || mmNorth ? -yaw : 0); g.beginPath(); g.moveTo(0, -9); g.lineTo(6, 7); g.lineTo(0, 3.5); g.lineTo(-6, 7); g.closePath(); g.fillStyle = '#fff'; g.fill(); g.lineWidth = 1.5; g.strokeStyle = '#000c'; g.stroke(); g.restore();
   g.save(); g.translate(cx, cx); g.rotate(rot); g.font = 'bold 15px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#ffe9a8'; g.strokeStyle = '#000'; g.lineWidth = 3;   // N-Markierung am Rand
   { const nx = Math.sin(rot), ny = -Math.cos(rot), tt = (cx - 13) / Math.max(Math.abs(nx), Math.abs(ny)); g.setTransform(1, 0, 0, 1, 0, 0); g.strokeText('N', cx + nx * tt, cx + ny * tt); g.fillText('N', cx + nx * tt, cx + ny * tt); }   // N sitzt dort am eckigen Rand, wo Norden liegt
   g.restore();
