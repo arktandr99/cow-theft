@@ -373,6 +373,7 @@ let scene, camera, renderer, worldBuilt = false, last = performance.now(), lastS
 let stepT = 0, ambientT = 8;
 let myVel = { x: 0, z: 0 }, lastPx = 0, lastPz = 0;   // eigene Geschwindigkeit (für den Schwung der Ragdoll)
 let jy = 0, vy = 0, landK = 0;                 // Sprunghöhe über dem Boden (m), Vertikalgeschwindigkeit, Landestoß für die Ego-Waffe
+let trenchEntryUntil = 0;                     // beim Hineinfallen kurz keine seitliche Wandkorrektur, damit man nicht nach vorn geschoben wird
 const JUMP_V = 4.6, GRAV = 13;                 // ca. 0,8 m hoch, ca. 0,7 s in der Luft
 
 // ---------- Einstellungen (werden im Browser gespeichert, Taste F2) ----------
@@ -5051,6 +5052,7 @@ function move(dt) {
   if (l > 0) {
     const fromX = pos.x, fromZ = pos.z;
     pos.x += fx_ / l * sp * dt; pos.z += fz / l * sp * dt;
+    if (pitDepth(fromX, fromZ) === 0 && pitDepth(pos.x, pos.z) > 0) trenchEntryUntil = performance.now() + 550;
     if (!keys.Space && pitDepth(fromX, fromZ) > 0 && pitDepth(pos.x, pos.z) === 0 && solids.boxes.some(b => b.tr && Math.abs(pos.x - b.x) < b.hw + 0.5 && Math.abs(pos.z - b.z) < b.hd + 0.5)) { pos.x = fromX; pos.z = fromZ; } // An einer Grabenwand festhalten; offene Stufen bleiben begehbar
     if (swim) { swimT -= dt; if (swimT <= 0) { sSplash(null, 0.35); swimT = 0.9 + Math.random() * 0.4; } }     // Schwimmzüge
     else {
@@ -5094,7 +5096,7 @@ function resolveCollisions(rad) {
       for (const w of h.wl) boxOut(w[0], w[1], w[2], w[3]);
       for (const f of h.fu) boxOut(f.x, f.z, f.hw, f.hd);
     }
-    for (const b of solids.boxes) if (!b.tr || pitDepth(pos.x, pos.z) > 0) boxOut(b.x, b.z, b.hw, b.hd);
+    for (const b of solids.boxes) if (!b.tr || (pitDepth(pos.x, pos.z) > 0 && performance.now() >= trenchEntryUntil)) boxOut(b.x, b.z, b.hw, b.hd);
     for (const c of solids.circles) circleOut(c.x, c.z, c.r);
     for (const id in cMesh) { // Kühe ohne Reiter sind Hindernisse
       const d = cMesh[id].userData.t;
