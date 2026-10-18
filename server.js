@@ -829,6 +829,30 @@ function rayVehicle(o, d, x, z, yaw, hw, hd, y, h) {                         // 
   const lo = [dx * rx + dz * rz, o[1], dx * fx + dz * fz], ld = [d[0] * rx + d[2] * rz, d[1], d[0] * fx + d[2] * fz];
   return rayBox(lo, ld, { x: 0, z: 0, w: hw * 2, d: hd * 2, y, h });
 }
+function rayVehicleParts(o, d, x, z, yaw, baseY, parts) {
+  const rx = Math.cos(yaw), rz = -Math.sin(yaw), fx = -Math.sin(yaw), fz = -Math.cos(yaw); let best = 1e9;
+  for (const [lx, lz, hw, hd, y, h] of parts) best = Math.min(best, rayVehicle(o, d, x + rx * lx + fx * lz, z + rz * lx + fz * lz, yaw, hw, hd, baseY + y, h));
+  return best;
+}
+const QUAD_SHOT_PARTS = [ // Radboxen folgen Rahmen, Kotflügeln, Anbauteilen, Lenker und vier Reifen
+  [0, 0, 0.31, 0.78, 0.38, 0.16], [0, -0.68, 0.475, 0.26, 0.56, 0.2], [0, 0.72, 0.475, 0.3, 0.57, 0.22],
+  [0, -0.3, 0.3, 0.275, 0.67, 0.3], [0, 0.42, 0.18, 0.4, 0.75, 0.14], [0, -0.8, 0.26, 0.21, 0.78, 0.1], [0, 1.02, 0.28, 0.2, 0.81, 0.1],
+  [0, -0.3, 0.5, 0.08, 1.12, 0.08], [0, -0.3, 0.04, 0.04, 0.84, 0.3],
+  ...[-0.64, 0.64].flatMap(x => [-0.72, 0.72].map(z => [x, z, 0.15, 0.31, 0, 0.62]))
+];
+const TRACTOR_SHOT_PARTS = [ // offene Kabine bleibt offen; Motor, Rahmen, Dach, Stützen, Anbauteile und Räder blockieren einzeln
+  [0, -0.05, 0.5, 1.55, 0.555, 0.45], [0, -1, 0.525, 0.775, 0.9, 0.8], [0, -1.82, 0.425, 0.05, 0.95, 0.5],
+  [0.36, -1.2, 0.06, 0.06, 1.575, 0.95], [-1.02, 0.8, 0.25, 0.75, 1.61, 0.14], [1.02, 0.8, 0.25, 0.75, 1.61, 0.14],
+  [0, 0.75, 0.775, 0.8, 1.06, 0.12], [-0.72, 0.05, 0.05, 0.05, 1.17, 1.3], [0.72, 0.05, 0.05, 0.05, 1.17, 1.3],
+  [-0.72, 1.45, 0.05, 0.05, 1.17, 1.3], [0.72, 1.45, 0.05, 0.05, 1.17, 1.3], [0, 0.75, 0.85, 0.9, 2.45, 0.1],
+  [0, 0.95, 0.275, 0.25, 1.28, 0.16], [0, 1.2, 0.275, 0.05, 1.385, 0.55], [0, 1.85, 0.17, 0.2, 0.72, 0.2],
+  ...[-1.05, 1.05].map(x => [x, 0.8, 0.25, 0.78, 0, 1.56]), ...[-0.85, 0.85].map(x => [x, -1.3, 0.17, 0.45, 0, 0.9])
+];
+const TRAILER_SHOT_PARTS = [ // Boden, Seitenwände, Stirnwand, Heckklappe, Deichsel und Räder
+  [0, 0, 1.2, 2.7, 0.75, 0.14], [-1.2, 0, 0.05, 2.7, 0.91, 0.7], [1.2, 0, 0.05, 2.7, 0.91, 0.7],
+  [0, -2.65, 1.2, 0.05, 0.86, 0.9], [0, 2.65, 1.2, 0.05, 0.86, 0.4], [0, -3.15, 0.07, 0.45, 0.68, 0.14], [0, -3.58, 0.15, 0.08, 0.65, 0.2],
+  ...[-1.4, 1.4].map(x => [x, 0.5, 0.275, 0.55, 0, 1.1])
+];
 const r1 = v => Math.round(v * 10) / 10;
 let impQ = [], hitQ = {};                              // pro Tick gesammelte Einschläge (an alle) und Trefferbestätigungen (an die Schützen)
 function breakGlass(g, at) {
@@ -850,9 +874,9 @@ function stepBullet(b, now) {
   for (const tb of treeBoxes) { const t = rayBox(p0, d, tb); if (t < tMax) { tMax = t; kind = 3; hb = tb; } }
   for (const q of quadList) {
     const y = groundY(q.x, q.z), tk = q.kind === 1;
-    const t = rayVehicle(p0, d, q.x, q.z, q.yaw, tk ? 1.4 : 0.8, tk ? 2.1 : 1.25, y, tk ? 2.65 : 1.25);
+    const t = rayVehicleParts(p0, d, q.x, q.z, q.yaw, y, tk ? TRACTOR_SHOT_PARTS : QUAD_SHOT_PARTS);
     if (t < tMax) { tMax = t; kind = 5; hb = null; }
-    if (tk) { const tt = rayVehicle(p0, d, q.ax, q.az, q.ty, 1.5, 3.0, groundY(q.ax, q.az) + 0.25, 1.45); if (tt < tMax) { tMax = tt; kind = 5; hb = null; } }
+    if (tk) { const tt = rayVehicleParts(p0, d, q.ax, q.az, q.ty, groundY(q.ax, q.az), TRAILER_SHOT_PARTS); if (tt < tMax) { tMax = tt; kind = 5; hb = null; } }
   }
   { const tg = rayTerrain(p0, d, tMax); if (tg < tMax) { tMax = tg; kind = 1; hb = null; } }       // das Gelände (Boden, Hügel) stoppt Schüsse ebenfalls
   let best = null, bt = tMax, head = false, zone = 'b';
@@ -1511,8 +1535,8 @@ function losClear(o, tp) {   // freie Sicht zwischen zwei Punkten? Gebäude, Bau
   for (const tb of treeBoxes) t = Math.min(t, rayBox(o, d, tb));
   for (const q of quadList) {
     const tk = q.kind === 1;
-    t = Math.min(t, rayVehicle(o, d, q.x, q.z, q.yaw, tk ? 1.4 : 0.8, tk ? 2.1 : 1.25, groundY(q.x, q.z), tk ? 2.65 : 1.25));
-    if (tk) t = Math.min(t, rayVehicle(o, d, q.ax, q.az, q.ty, 1.5, 3.0, groundY(q.ax, q.az) + 0.25, 1.45));
+    t = Math.min(t, rayVehicleParts(o, d, q.x, q.z, q.yaw, groundY(q.x, q.z), tk ? TRACTOR_SHOT_PARTS : QUAD_SHOT_PARTS));
+    if (tk) t = Math.min(t, rayVehicleParts(o, d, q.ax, q.az, q.ty, groundY(q.ax, q.az), TRAILER_SHOT_PARTS));
   }
   if (t > len - 0.5) t = Math.min(t, rayTerrain(o, d, len));                      // Hügel verdecken ebenfalls
   if (t > len - 0.5 && smokes.length && smokeBlocks(o, tp, Date.now())) return false;   // Rauchwolken verdecken auch

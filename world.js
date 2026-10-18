@@ -239,7 +239,6 @@ function generate(cfg, seed) {
   addProp('bench', vx, pzc - 6.5, 2.2, 0.7); addProp('bench', vx, pzc + 6.5, 2.2, 0.7); addProp('bench', vx - 6.5, pzc, 0.7, 2.2); addProp('bench', vx + 6.5, pzc, 0.7, 2.2);
   for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) addProp('lamp', vx + sx * 9, pzc + sz * 9, 0.3, 0.3);
   addProp('lamp', churchX - 4.5, zc - S * 3, 0.3, 0.3); addProp('lamp', churchX + 4.5, zc - S * 3, 0.3, 0.3);   // am Kirchvorplatz
-  addProp('sign', gx0 + 3, wz + 4.6, 0.3, 0.3); addProp('sign', gx1 - 3, ez - 4.6, 0.3, 0.3); addProp('sign', gx2 - 3, fz - 4.6, 0.3, 0.3);        // Wegweiser an den Toren
   // Holzstapel, Heuballen, Karren und Tröge an Wohnhäusern und Scheunen im Dorf
   const propClear = (x, z, hw, hd, m = 1.4) => !occ.some(o => rectGap({ x, z, hw, hd }, o) < m) && !props.some(p => PROP[p.k][1] && rectGap({ x, z, hw, hd }, { x: p.x, z: p.z, hw: p.w / 2, hd: p.d / 2 }) < m) && boxEdge({ x, z, hw, hd }) > 1.5;
   // ---------- 2b. Zwischenland: Weiler, Gehöfte und Zaunreihen zwischen je zwei Gehegen ----------

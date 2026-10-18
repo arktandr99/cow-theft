@@ -5112,6 +5112,14 @@ function resolveCollisions(rad) {
       pos.x = cx + rx * x + fx * z; pos.z = cz + rz * x + fz * z;
     }
   };
+  const quadOut = g => { // einzelne sichtbare Quad-Bauteile statt eines großen Rechtecks; gleiche Maße wie das Modell
+    const yaw = g.rotation.y, rx = Math.cos(yaw), rz = -Math.sin(yaw), fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+    const part = (x, z, hw, hd) => obbOut(g.position.x + rx * x + fx * z, g.position.z + rz * x + fz * z, hw, hd, yaw);
+    for (const x of [-0.64, 0.64]) for (const z of [-0.72, 0.72]) part(x, z, 0.15, 0.31);  // Reifen: schmaler Zylinder entlang x
+    part(0, 0, 0.31, 0.78); part(0, -0.68, 0.475, 0.26); part(0, 0.72, 0.475, 0.3);       // Rahmen und Kotflügel
+    part(0, -0.3, 0.3, 0.275); part(0, 0.42, 0.18, 0.4);                                  // Haube und Sitz
+    part(0, -0.8, 0.26, 0.21); part(0, 1.02, 0.28, 0.2); part(0, -0.3, 0.5, 0.08);      // Gepäckträger und Lenker
+  };
   for (let pass = 0; pass < 2; pass++) { // zwei Durchgänge, damit man in Ecken nicht durchrutscht
     for (const h of houses) {
       if (!h.e) { boxOut(h.x, h.z, h.w / 2, h.d / 2); continue; }
@@ -5131,7 +5139,7 @@ function resolveCollisions(rad) {
       if (g.userData.kind === 1) {
         obbOut(g.position.x, g.position.z, 1.4, 2.1, g.rotation.y);
         const U = g.userData; if (U.trl && U.ax != null) obbOut(U.ax, U.az, 1.5, 3.0, U.ty);
-      } else obbOut(g.position.x, g.position.z, 0.8, 1.25, g.rotation.y);
+      } else quadOut(g);
     }
   }
   pos.x = Math.max(-MAP, Math.min(MAP, pos.x)); pos.z = Math.max(-MAP, Math.min(MAP, pos.z));
