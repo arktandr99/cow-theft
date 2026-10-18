@@ -766,7 +766,8 @@ function check(w, cfg) {
   PEN.forEach((p, t) => {                                                                   // Zäune wie in Server und Client
     const s = PEN_R * 2, inner = p.s * PEN_R, outer = -inner;
     box(p.x, p.z - PEN_R, s / 2, 0.1); box(p.x, p.z + PEN_R, s / 2, 0.1); box(p.x + outer, p.z, 0.1, s / 2);
-    box(p.x + inner, p.z - PEN_R * 0.7, 0.1, s * 0.15); box(p.x + inner, p.z + PEN_R * 0.7, 0.1, s * 0.15);
+    const gateHalf = 3, gateSeg = PEN_R - gateHalf, gateOffset = (PEN_R + gateHalf) / 2;
+    box(p.x + inner, p.z - gateOffset, 0.1, gateSeg / 2); box(p.x + inner, p.z + gateOffset, 0.1, gateSeg / 2);
     for (let i = 0; i < 3; i++) box(p.x + (outer < 0 ? -1 : 1) * (PEN_R - 2.5), p.z + (i - 1) * 4, 0.6, 0.8);
   });
   const seen = new Uint8Array(W * W), q = [];

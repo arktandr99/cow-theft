@@ -4351,7 +4351,8 @@ function buildWorld(penR) {
     side(s, 0.2, 0, -penR); side(s, 0.2, 0, penR);
     const inner = (p.s || (t === 0 ? 1 : -1)) * penR, outer = -inner;     // Torseite kommt vom Server (s = +1: Tor zeigt nach +x)
     side(0.2, s, outer, 0);
-    side(0.2, s * 0.3, inner, -penR * 0.7); side(0.2, s * 0.3, inner, penR * 0.7); // Tor in der Mitte
+    const gateHalf = 3, gateSeg = penR - gateHalf, gateOffset = (penR + gateHalf) / 2;
+    side(0.2, gateSeg, inner, -gateOffset); side(0.2, gateSeg, inner, gateOffset); // sechs Meter breite Durchfahrt
     for (let i = 0; i < 3; i++) { // Heuballen
       const b = new THREE.Mesh(hayGeo(), PL_MAT);
       b.rotation.y = (i - 1) * 0.25; b.position.set(p.x + (outer < 0 ? -1 : 1) * (penR - 2.5), groundY(p.x, p.z) + 0.8, p.z + (i - 1) * 4); scene.add(b);
@@ -5096,6 +5097,15 @@ function resolveCollisions(rad) {
       if (d < 1e-4) pos.x = cx + R; else { pos.x = cx + dx / d * R; pos.z = cz + dz / d * R; }
     }
   };
+  const obbOut = (cx, cz, hw, hd, yaw) => { // Spieler gegen gedrehtes Fahrzeugrechteck
+    const rx = Math.cos(yaw), rz = -Math.sin(yaw), fx = -Math.sin(yaw), fz = -Math.cos(yaw), dx = pos.x - cx, dz = pos.z - cz;
+    let x = dx * rx + dz * rz, z = dx * fx + dz * fz;
+    const hx = hw + rad, hz = hd + rad;
+    if (Math.abs(x) < hx && Math.abs(z) < hz) {
+      if (hx - Math.abs(x) < hz - Math.abs(z)) x = Math.sign(x || 1) * hx; else z = Math.sign(z || 1) * hz;
+      pos.x = cx + rx * x + fx * z; pos.z = cz + rz * x + fz * z;
+    }
+  };
   for (let pass = 0; pass < 2; pass++) { // zwei Durchgänge, damit man in Ecken nicht durchrutscht
     for (const h of houses) {
       if (!h.e) { boxOut(h.x, h.z, h.w / 2, h.d / 2); continue; }
@@ -5110,12 +5120,12 @@ function resolveCollisions(rad) {
       if (!d || d.r || +id === me.cow) continue;
       circleOut(d.x, d.z, 1.0);
     }
-    for (const id in quadMesh) {                                                                                   // andere Fahrzeuge sind Hindernisse (Traktor: Kabine und drei Kreise entlang des Anhängers)
+    for (const id in quadMesh) {                                                                                   // andere Fahrzeuge blockieren mit ihrer tatsächlichen, gedrehten Grundfläche
       const g = quadMesh[id], d = g.userData.t; if (!d || (onQuad() && +id === me.quad)) continue;
       if (g.userData.kind === 1) {
-        circleOut(g.position.x, g.position.z, 1.5);
-        const U = g.userData; if (U.trl && U.ax != null) { const fx = -Math.sin(U.ty), fz = -Math.cos(U.ty); for (const o of [-1.9, 0, 1.9]) circleOut(U.ax + fx * o, U.az + fz * o, 1.4); }
-      } else circleOut(g.position.x, g.position.z, 1.0);
+        obbOut(g.position.x, g.position.z, 1.4, 2.1, g.rotation.y);
+        const U = g.userData; if (U.trl && U.ax != null) obbOut(U.ax, U.az, 1.5, 3.0, U.ty);
+      } else obbOut(g.position.x, g.position.z, 0.8, 1.25, g.rotation.y);
     }
   }
   pos.x = Math.max(-MAP, Math.min(MAP, pos.x)); pos.z = Math.max(-MAP, Math.min(MAP, pos.z));

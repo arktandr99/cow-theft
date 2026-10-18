@@ -1258,7 +1258,8 @@ function buildSolids() {
     side(s, 0.2, 0, -PEN_R); side(s, 0.2, 0, PEN_R);
     const inner = p.s * PEN_R, outer = -inner;
     side(0.2, s, outer, 0);
-    side(0.2, s * 0.3, inner, -PEN_R * 0.7); side(0.2, s * 0.3, inner, PEN_R * 0.7);   // Tor in der Mitte der Innenseite
+    const gateHalf = 3, gateSeg = PEN_R - gateHalf, gateOffset = (PEN_R + gateHalf) / 2;
+    side(0.2, gateSeg, inner, -gateOffset); side(0.2, gateSeg, inner, gateOffset);   // sechs Meter breite Durchfahrt
     for (let i = 0; i < 3; i++) solidBoxes.push({ x: p.x + (outer < 0 ? -1 : 1) * (PEN_R - 2.5), z: p.z + (i - 1) * 4, hw: 0.6, hd: 0.8 }); // Heuballen
     solidCircles.push({ x: p.x, z: p.z, r: 0.2 });                                      // Fahnenmast
   });
