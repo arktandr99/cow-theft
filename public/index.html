@@ -1184,7 +1184,8 @@ function applyRecoil(W) {
   shotsInRow = fresh ? 0 : shotsInRow + 1; lastKickAt = now;
   if (fresh) { recBias = (Math.random() < 0.5 ? -1 : 1) * (0.25 + Math.random() * 0.75); recWander = 0; }   // jede Salve neigt zu einer anderen Seite
   recWander = recWander * 0.8 + gauss() * 0.35;                 // Drift ändert sich von Schuss zu Schuss (Zufallsweg)
-  const stance = (zoom ? 0.45 : 1) * (crouch ? 0.75 : 1) * (moving ? 1.25 : 1) * proneRecoil(W);     // Zielen (ADS): wie in Sandstorm deutlich ruhiger, Anstieg nur noch ca. 45 %; liegend: drastisch weniger (MGs am meisten)
+  const adsScale = W && W.cat === 'pst' ? 0.45 : 0.25;             // Pistolen behalten ihren bisherigen ADS-Rückstoß
+  const stance = (zoom ? adsScale : 1) * (crouch ? 0.75 : 1) * (moving ? 1.25 : 1) * proneRecoil(W);     // ADS beruhigt Nicht-Pistolen stärker; liegend: drastisch weniger (MGs am meisten)
   const up = R.up * cal * (1 + Math.min(shotsInRow, R.max) * R.ramp * (zoom ? 0.7 : 1) * (1 - 0.6 * prK)) * stance;   // beim Zielen baut sich der Dauerfeuer-Anstieg auch langsamer auf   // Anstieg: Waffentabelle x Kaliberfaktor
   const mag = 0.6 + Math.random() * 0.8;                         // jeder Schuss hebt unterschiedlich stark (60 % bis 140 %)
   const dip = Math.random() < 0.08 ? -0.6 : 1;                   // selten springt die Mündung kaum oder sogar kurz nach unten
@@ -3572,7 +3573,7 @@ function onFx(m) {
   if (!mine && pMesh[m.i]) { const u = pMesh[m.i].userData; if (!W.sup && !m.s) u.flashAt = performance.now() / 1000; if (W.act === 'pump') u.pumpAt = performance.now() / 1000; if (W.act === 'bolt') u.boltAt = performance.now() / 1000; u.fmAt = performance.now() / 1000; u.fmEm = !!m.em; }   // Mündungsfeuer / Pumpen / Repetieren / Schlitten bei anderen Spielern
   if (mine) {
     fmShotAt = performance.now() / 1000; fmShotEm = !!m.em;
-    { const km = Math.max(0.45, Math.min(1.6, calMult(W))); kickV += 70 * (1 - 0.4 * ads) * proneRecoil(W) ** 0.6 * (W.cat === 'sg' || W.dmg >= 100 ? 1.6 : (W.cat === 'pst' ? 0.8 : 1)) * km * (me && me.at === 'grip' ? 0.7 : 1); flash = (W.sup || m.s) ? 0 : 0.05; kxT = (Math.random() - 0.5) * 0.03 * km; kryT = (Math.random() - 0.5) * 0.09 * km; krzT = (Math.random() - 0.5) * 0.2 * km; applyRecoil(W); }
+    { const km = Math.max(0.45, Math.min(1.6, calMult(W))); const adsKick = W.cat === 'pst' ? 1 - 0.4 * ads : 1 - 0.8 * ads; kickV += 70 * adsKick * proneRecoil(W) ** 0.6 * (W.cat === 'sg' || W.dmg >= 100 ? 1.6 : (W.cat === 'pst' ? 0.8 : 1)) * km * (me && me.at === 'grip' ? 0.7 : 1); flash = (W.sup || m.s) ? 0 : 0.05; kxT = (Math.random() - 0.5) * 0.03 * km; kryT = (Math.random() - 0.5) * 0.09 * km; krzT = (Math.random() - 0.5) * 0.2 * km; applyRecoil(W); }
     if (vg) {
       const U = vg.userData.U;
       if (W.act === 'pump') { pumpT = 0; shellFlag = false; }
