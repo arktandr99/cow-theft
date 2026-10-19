@@ -1347,6 +1347,24 @@ const BOT_NAMES = ['Hans', 'Lena', 'Jonas', 'Mia', 'Emil', 'Anna', 'Paul', 'Nele
 const BOT_RANGE = { ar: 90, br: 110, lmg: 100, dmr: 160, snp: 220, smg: 55, sg: 28, pst: 30 };   // ab dieser Entfernung sehen Bots Gegner (je nach Waffenart)
 const BOT_STOP = { ar: 35, br: 45, lmg: 45, dmr: 60, snp: 70, smg: 25, sg: 15, pst: 15 };       // innerhalb dieser Entfernung bleiben sie stehen und kämpfen
 const botCat = p => WEAPONS[p.inv[0].w].cat;
+let botTrenchCells = null;
+function trenchFightPosition(p, enemy) {
+  if (!botTrenchCells) {
+    botTrenchCells = [];
+    for (const pit of WORLD.terrain.pits || []) for (let iz = 0; iz < pit.nz; iz++) for (let ix = 0; ix < pit.nx; ix++) {
+      if (pit.d.charCodeAt(iz * pit.nx + ix) - 48 < 3) continue;
+      botTrenchCells.push({ x: pit.x + (ix + 0.5) * pit.q, z: pit.z + (iz + 0.5) * pit.q });
+    }
+  }
+  let best = null, bestScore = Infinity;
+  for (const c of botTrenchCells) {
+    const dp = Math.hypot(c.x - p.x, c.z - p.z), de = Math.hypot(c.x - enemy.x, c.z - enemy.z);
+    if (dp > 22 || de < 9 || de > 48) continue;
+    const score = dp + Math.abs(de - 24) * 0.18;
+    if (score < bestScore) { best = c; bestScore = score; }
+  }
+  return best;
+}
 const BOT_LEVELS = [                                                   // Schwierigkeit: Reaktionszeit (ms), Zielgeschwindigkeit, Zielfehler, Suchintervall, Feuerpausen (Faktoren)
   { n: 'Leicht', react: [900, 1500], turn: 0.6, err: 1.9, scan: 1.4, pause: 1.5 },
   { n: 'Normal', react: [500, 900], turn: 1, err: 1, scan: 1, pause: 1 },
@@ -1646,6 +1664,16 @@ function botThink(p, now) {
   if (fight) {                                                                   // --- Kampf: stehen bleiben, zielen, schießen ---
     p.moving = false; p.sprint = false;
     const dx = enemy.x - p.x, dz = enemy.z - p.z, dh = Math.hypot(dx, dz);
+    const tactical = p.cow === null && (ai.job === 'hunter' || cat === 'snp' || cat === 'dmr' || cat === 'lmg');
+    if (tactical && WORLD.pitDepth(p.x, p.z) < 0.7) {
+      if (ai.coverEnemy !== enemy.id || now >= (ai.coverCheck || 0)) {
+        ai.coverEnemy = enemy.id; ai.coverCheck = now + 1400;
+        ai.cover = trenchFightPosition(p, enemy); ai.coverUntil = now + 9000;
+      }
+      if (ai.cover && now < ai.coverUntil && Math.hypot(ai.cover.x - p.x, ai.cover.z - p.z) > 2.4) botMove(p, ai, ai.cover, enemy, now, dt);
+      else { ai.cover = null; p.moving = false; }
+    } else { ai.cover = null; p.moving = false; }
+    p.sprint = false;
     p.crouch = p.cow === null && (dh > 28 || cat === 'snp' || cat === 'dmr' || cat === 'lmg');           // auf Entfernung gehen Bots in die Hocke (kleineres Ziel, ruhigere Waffe)
     // Vorhalt: Flugzeit des Geschosses (dh / v) mal Bewegung des Gegners, dazu der Fall nach 0,1 s
     const ft = dh / W.v, fall = 0.5 * GRAVITY * Math.max(0, ft - DROP_AFTER) ** 2;
@@ -1852,6 +1880,7 @@ wss.on('connection', (ws, req) => {
   let tok = MSG_BURST, tokAt = Date.now(), drops = 0, dropT = 0;           // Nachrichten-Budget dieser Verbindung
   const joinTimer = setTimeout(() => { if (!p.joined && !p.obs && ws.readyState === 1) ws.close(1008, 'keine Anmeldung'); }, JOIN_TIMEOUT_MS);
   const onMsg = m => {
+    if (m.t === 'ping' && Number.isSafeInteger(m.i)) { send(p, { t: 'pong', i: m.i }); return; }
     if (p.down && !['state', 'revive', 'giveup', 'loadout', 'join', 'vote'].includes(m.t)) return;   // Niedergeschossene können nur kriechen (und am Rundenende mit abstimmen)
     if (m.t === 'join' && m.obs) {                                                                  // Beobachter: schaut nur zu, hat kein Team, keine Figur und zählt nirgends
       p.name = cleanName(m.name, 'Zuschauer'); p.obs = true; p.joined = false; p.dead = true; p.respawnAt = 0; p.ready = false;

@@ -57,6 +57,7 @@ body.obs #dead>div:first-child{display:none}
 #flashfx{position:fixed;inset:0;z-index:3;pointer-events:none;opacity:0;background:#fff}
 #envhud{position:absolute;right:0;top:240px;width:240px;box-sizing:border-box;padding:3px 8px;text-align:center;font-size:13px;color:#dfe8f5;text-shadow:0 0 4px #000;background:rgba(0,0,0,.4);pointer-events:none}   /* direkt unter der Minimap */
 #envhud b{display:inline-block;color:#ffe9a8;font-weight:bold}
+#diag{position:absolute;left:12px;top:122px;padding:3px 7px;border-radius:4px;background:rgba(0,0,0,.48);font:12px/1.35 monospace;color:#dce6ee;text-shadow:0 1px 2px #000;display:none}
 #radio{position:absolute;left:24px;top:36%;background:rgba(0,0,0,.62);border:1px solid #fff5;border-radius:6px;padding:8px 14px;font-size:15px;line-height:1.6;display:none;color:#fff}
 #radio small{color:#ffe9a8}
 #radio i{font-style:normal;color:#fc3;font-weight:bold;margin-right:6px}
@@ -176,7 +177,7 @@ body.obs #radio{display:none!important}
 <div id="suppfx"></div>
 <div id="sb"></div>
 <div id="vig"></div>
-<div id="hud"><div id="top"></div><div id="log"></div><div id="jlog"></div><div id="cross"></div><div id="mate"></div><div id="hint"></div><div id="bl"></div><div id="ammo"></div><canvas id="cmp" width="560" height="46"></canvas><canvas id="mm" width="240" height="240"></canvas><div id="mapbg"></div><div id="envhud"></div><div id="radio"></div><div id="cook"><i></i><span></span></div></div>
+<div id="hud"><div id="top"></div><div id="log"></div><div id="jlog"></div><div id="cross"></div><div id="mate"></div><div id="hint"></div><div id="bl"></div><div id="ammo"></div><div id="diag"></div><canvas id="cmp" width="560" height="46"></canvas><canvas id="mm" width="240" height="240"></canvas><div id="mapbg"></div><div id="envhud"></div><div id="radio"></div><div id="cook"><i></i><span></span></div></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
@@ -221,7 +222,7 @@ const EN = {
   '⚙ Einstellungen': '⚙ Settings', 'Maus und Sicht': 'Mouse and view', 'Empfindlichkeit': 'Sensitivity', 'Empfindlichkeit beim Zielen': 'Aiming sensitivity', 'Sichtfeld (FOV)': 'Field of view (FOV)', 'Maus Y umkehren': 'Invert mouse Y',
   'Grafik und Leistung': 'Graphics and performance', 'Schattenqualität': 'Shadow quality', 'Automatisch': 'Automatic', 'Aus': 'Off', 'Mittel': 'Medium', 'Hoch': 'High', 'Render-Auflösung': 'Render resolution', 'Sichtweite': 'View distance',
   'Bei schwachem PC: Auflösung und Sichtweite senken. Das Spiel senkt die Schatten bei niedriger Bildrate selbst, solange „Automatisch“ gewählt ist.': 'On a weak PC: lower the resolution and view distance. The game lowers the shadows by itself when the frame rate is low, as long as “Automatic” is selected.',
-  'Lautstärke': 'Volume', 'Gesamt': 'Master', 'Waffen und Explosionen': 'Weapons and explosions', 'Umgebung (Vögel, Schritte, Einschläge)': 'Environment (birds, footsteps, impacts)', 'Kühe': 'Cows', 'Hinweistöne (Treffer, Aufnehmen …)': 'Alert sounds (hits, pickups …)',
+  'Lautstärke': 'Volume', 'Gesamt': 'Master', 'Waffen und Explosionen': 'Weapons and explosions', 'Umgebung (Vögel, Schritte, Einschläge)': 'Environment (birds, footsteps, impacts)', 'Wind': 'Wind', 'Kühe': 'Cows', 'Hinweistöne (Treffer, Aufnehmen …)': 'Alert sounds (hits, pickups …)', 'FPS und Ping anzeigen': 'Show FPS and ping',
   'Tasten (zum Ändern anklicken, dann die neue Taste drücken)': 'Keys (click to change, then press the new key)', 'Esc bricht das Ändern ab. Wird eine Taste doppelt vergeben, tauschen die beiden Aktionen ihre Tasten.': 'Esc cancels the change. If a key is assigned twice, the two actions swap their keys.',
   'Alles zurücksetzen': 'Reset everything', 'Fertig (F2)': 'Done (F2)',
   // Meldungen (Client)
@@ -374,6 +375,7 @@ const curW = () => (me && WT && (WT[me.w] || WT.m4a1)) || null;   // Daten der g
 let yaw = 0, pitch = 0, pos = { x: 0, z: 0 }, mouseDown = false, zoom = false, locked = false;
 const keys = {}, pMesh = {}, cMesh = {}, fx = [], logLines = [];
 let scene, camera, renderer, worldBuilt = false, last = performance.now(), lastShot = 0, lastState = 0, score = [0, 0, 0], left = 900;
+let diagFrames = 0, diagAt = performance.now(), diagFps = 0, diagPing = null, diagPingAt = 0, diagPingAtNext = 0, diagPingId = 0;
 let stepT = 0, ambientT = 8;
 let myVel = { x: 0, z: 0 }, lastPx = 0, lastPz = 0;   // eigene Geschwindigkeit (für den Schwung der Ragdoll)
 let jy = 0, vy = 0, landK = 0;                 // Sprunghöhe über dem Boden (m), Vertikalgeschwindigkeit, Landestoß für die Ego-Waffe
@@ -384,13 +386,14 @@ const JUMP_V = 4.6, GRAV = 13;                 // ca. 0,8 m hoch, ca. 0,7 s in d
 // Tasten: Aktion -> Standardtaste. canon() übersetzt eine gedrückte Taste in die Standardtaste ihrer Aktion, so läuft der übrige Code unverändert weiter.
 const KB_DEF = { fwd: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', jump: 'Space', crouch: 'ControlLeft', sprint: 'ShiftLeft', reload: 'KeyR', ability: 'KeyX', mount: 'KeyF', nade: 'KeyG', mode: 'KeyB', laser: 'KeyV', bipod: 'KeyH', loadout: 'KeyL', score: 'Tab', mute: 'KeyP', map: 'KeyM', mapn: 'KeyN', radio: 'KeyC', leanL: 'KeyQ', leanR: 'KeyE', prone: 'AltLeft', s1: 'Digit1', s2: 'Digit2', s3: 'Digit3' };
 const KB_NAME = { fwd: 'Vorwärts', back: 'Rückwärts', left: 'Links', right: 'Rechts', jump: 'Springen', crouch: 'Hocken', sprint: 'Sprinten / Atem anhalten', reload: 'Nachladen', ability: 'Fähigkeit', mount: 'Interaktion (Kuh / Quad, Wiederbeleben)', nade: 'Granate', mode: 'Feuermodus', laser: 'Laser an/aus', bipod: 'Zweibein aufstellen/einklappen', loadout: 'Ausrüstung wählen', score: 'Scoreboard', mute: 'Ton an/aus', map: 'Große Karte öffnen/schließen', mapn: 'Minimap Norden/Blick', radio: 'Funk (Schnellrufe an das Team)', leanL: 'Links lehnen (halten)', leanR: 'Rechts lehnen (halten)', prone: 'Hinlegen / aufstehen', s1: 'Hauptwaffe', s2: 'Pistole', s3: 'Mistgabel' };
-const SET_DEF = { sens: 1, zsens: 1, invY: false, fov: 75, res: 1, far: 440, vol: { master: 1, w: 1, e: 1, c: 1, u: 1 }, kb: {} };
+const SET_DEF = { sens: 1, zsens: 1, invY: false, fov: 75, res: 1, far: 440, diag: false, vol: { master: 1, w: 1, e: 1, wind: 1, c: 1, u: 1 }, kb: {} };
 function loadSettings() {
   const S = JSON.parse(JSON.stringify(SET_DEF));
   try {
     const o = JSON.parse(localStorage.getItem('ct_settings') || '{}');
     for (const k of ['sens', 'zsens', 'fov', 'res', 'far']) if (typeof o[k] === 'number' && isFinite(o[k])) S[k] = o[k];
     if (typeof o.invY === 'boolean') S.invY = o.invY;
+    if (typeof o.diag === 'boolean') S.diag = o.diag;
     if (o.vol) for (const k in S.vol) if (typeof o.vol[k] === 'number' && isFinite(o.vol[k])) S.vol[k] = Math.max(0, Math.min(1, o.vol[k]));
     if (o.kb) for (const a in KB_DEF) if (typeof o.kb[a] === 'string' && o.kb[a]) S.kb[a] = o.kb[a];
     if (S.kb.mute === 'KeyM' && !S.kb.map) S.kb.mute = 'KeyP'; // alte Standardbelegung: M war Ton an/aus
@@ -462,7 +465,7 @@ let supp = 0;                                   // Suppression 0..1: Kugeln flie
 // AUDIO: alle Geräusche werden per WebAudio erzeugt (keine Dateien nötig)
 // =====================================================================
 let AC = null, master = null, comp = null, masterLP = null, noiseBuf = null, muted = false;
-// Lautstärke-Gruppen: w Waffen und Explosionen, e Umgebung (Vögel, Schritte, Einschläge, Glas), c Kühe, u Hinweistöne. CAT sagt, in welche Gruppe gerade geschaltet wird (siehe grp()).
+// Lautstärke-Gruppen: w Waffen und Explosionen, e Umgebung, wind Wind, c Kühe, u Hinweistöne. CAT sagt, in welche Gruppe gerade geschaltet wird (siehe grp()).
 const BUS = {}; let CAT = 'u';
 const OUT = () => BUS[CAT] || master;
 function applyVolumes() {
@@ -475,7 +478,7 @@ function initAudio() {
   if (AC) { if (AC.state === 'suspended') AC.resume(); return; }
   AC = new (window.AudioContext || window.webkitAudioContext)();
   master = AC.createGain(); master.gain.value = 0.5;
-  for (const k of ['w', 'e', 'c', 'u']) { BUS[k] = AC.createGain(); BUS[k].connect(master); }
+  for (const k of ['w', 'e', 'wind', 'c', 'u']) { BUS[k] = AC.createGain(); BUS[k].connect(master); }
   comp = AC.createDynamicsCompressor(); comp.threshold.value = -10; comp.knee.value = 8; comp.ratio.value = 5; comp.attack.value = 0.002; comp.release.value = 0.18;   // Begrenzer: laute Schüsse übersteuern nicht
   masterLP = AC.createBiquadFilter(); masterLP.type = 'lowpass'; masterLP.frequency.value = 20000; master.connect(masterLP); masterLP.connect(comp); comp.connect(AC.destination);   // Tiefpass: dumpfer Ton unter Beschuss
   const n = AC.sampleRate;
@@ -910,10 +913,12 @@ try { ldSaved = JSON.parse(localStorage.getItem('ct_loadout') || '{}') || {}; } 
 function saveLoadout() { try { ldSaved.cls = sel; (ldSaved.guns = ldSaved.guns || {})[sel] = sel1; ldSaved.w2 = sel2; ldSaved.nd = selN; ldSaved.at = selA; localStorage.setItem('ct_loadout', JSON.stringify(ldSaved)); } catch (e) { } }
 // Vorschaubild einer Waffe (Seitenansicht), mit einem zweiten kleinen Renderer gemalt und zwischengespeichert
 const thumbCache = {}; let thumbR = null, thumbS = null, thumbC = null;
-function thumbFor(id) {
-  return thumbOf(id, () => {
+function thumbFor(id, att = '') {
+  return thumbOf('gun_' + id + '_' + (att || 'none'), () => {
     const w = buildWeapon(id);
     animateBipod(w.userData, false, 0); // legt die Beine in die eingeklappte Position statt sie unskaliert als lange Striche zu rendern
+    if (att === 'sup') suppressorFor(w);
+    if (att === 'laser') laserModFor(w);
     return w;
   });
 }
@@ -946,7 +951,7 @@ function statRows(W) {
 function cardHtml(id, selected) {
   const W = WT[id], rows = statRows(W).map(r => `<div class="st"><span>${r[0]}</span><i style="--v:${r[1].toFixed(2)}"></i><em>${r[2]}</em></div>`).join('');
   const mags = W.tube ? `${W.mag} + ${W.spare} Patr.` : `${W.mag} Patr. × ${W.spare + 1}`;
-  const img = thumbFor(id);
+  const img = thumbFor(id, id === sel1 ? selA : '');
   return `<div class="wc${selected ? ' sel' : ''}" data-w="${id}">${img ? `<img src="${img}" alt="">` : ''}<b>${esc(W.n)}</b><span class="cat">${CAT_NAME[W.cat] || ''}</span>${rows}<div class="mt">${Math.round(W.v)} m/s · ${mags}${W.sup ? ' · gedämpft' : ''}${W.scope ? ' · Zielfernrohr' : ''}</div></div>`;
 }
 function renderGuns() {
@@ -955,7 +960,7 @@ function renderGuns() {
   $('guns').innerHTML = list.map(id => cardHtml(id, id === sel1)).join('');
   $('psts').innerHTML = PST.map(id => cardHtml(id, id === sel2)).join('');
   for (const [box, setter] of [['guns', v => sel1 = v], ['psts', v => sel2 = v]])
-    $(box).querySelectorAll('.wc').forEach(el => el.onclick = () => { setter(el.dataset.w); $(box).querySelectorAll('.wc').forEach(x => x.classList.toggle('sel', x === el)); saveLoadout(); });
+    $(box).querySelectorAll('.wc').forEach(el => el.onclick = () => { setter(el.dataset.w); saveLoadout(); renderGuns(); });
 }
 const NADE_INFO = {
   frag: { n: 'Splittergranate', cat: 'Explosiv', d: 'Keine Druckwelle: Der Schaden kommt von hunderten einzelnen Splittern. Nah tödlich, Wände und Boden fangen Splitter ab, auf Distanz nur noch Streifschüsse. Zünder 3,6 s.', mk: () => makeNadeMesh('frag') },
@@ -971,7 +976,7 @@ const ATT_INFO = {
 function renderAtts() {
   if (!ATT_INFO[selA]) selA = '';
   $('atts').innerHTML = Object.keys(ATT_INFO).map(k => `<div class="wc${k === selA ? ' sel' : ''}" data-a="${k}"><b>${ATT_INFO[k].n}</b><span class="c">${ATT_INFO[k].d}</span></div>`).join('');
-  $('atts').querySelectorAll('.wc').forEach(el => el.onclick = () => { selA = el.dataset.a; $('atts').querySelectorAll('.wc').forEach(x => x.classList.toggle('sel', x === el)); saveLoadout(); });
+  $('atts').querySelectorAll('.wc').forEach(el => el.onclick = () => { selA = el.dataset.a; $('atts').querySelectorAll('.wc').forEach(x => x.classList.toggle('sel', x === el)); renderGuns(); saveLoadout(); });
 }
 function renderNades() {
   if (!NADE_INFO[selN]) selN = 'frag';
@@ -1058,6 +1063,7 @@ function onMsg(m) {
   else if (m.t === 'newmap') { window.onbeforeunload = null; try { sessionStorage.setItem('ct_newmap', String(m.seed || 1)); } catch (e) { } addLog('Neue Karte wird geladen …'); setTimeout(() => location.reload(), 400); }
   else if (m.t === 'spawn') { pos.x = m.x; pos.z = m.z; yaw = m.yaw; pitch = 0; jy = 0; vy = 0; dzYaw = 0; dzPitch = 0; }
   else if (m.t === 'snap') onSnap(m);
+  else if (m.t === 'pong' && Number.isSafeInteger(m.i) && m.i === diagPingId && diagPingAt) { diagPing = Math.max(0, Math.round(performance.now() - diagPingAt)); diagPingAt = 0; }
   else if (m.t === 'obs') { obsMode = true; document.body.classList.add('obs'); }
   else if (m.t === 'flash') onFlash(m.d);
   else if (m.t === 'msg') addLog(m.x, m.c);
@@ -4797,8 +4803,8 @@ function makeReverb() {
 function updateEnvAudio(dt, t) {
   if (!AC || !noiseBuf || !BUS.e) return;
   if (!envAud) {
-    const mk = (type, f, q) => { const s = AC.createBufferSource(); s.buffer = noiseBuf; s.loop = true; const fl = AC.createBiquadFilter(); fl.type = type; fl.frequency.value = f; fl.Q.value = q; const g = AC.createGain(); g.gain.value = 0; s.connect(fl); fl.connect(g); g.connect(BUS.e); s.start(0, Math.random() * 0.8); return { fl, g }; };
-    envAud = { wind: mk('lowpass', 300, 0.8) };
+    const s = AC.createBufferSource(); s.buffer = noiseBuf; s.loop = true; const fl = AC.createBiquadFilter(); fl.type = 'lowpass'; fl.frequency.value = 300; fl.Q.value = 0.8; const g = AC.createGain(); g.gain.value = 0; s.connect(fl); fl.connect(g); g.connect(BUS.wind); s.start(0, Math.random() * 0.8);
+    envAud = { wind: { fl, g } };
   }
   const inK = roomK, s = ENV.wS, T = AC.currentTime;
   envAud.wind.fl.frequency.setTargetAtTime(180 + 55 * s, T, 0.4);
@@ -4972,10 +4978,12 @@ function buildSettings() {
   slider('Render-Auflösung', 0.5, 1, 0.05, () => SET.res, v => { SET.res = v; GFX.res = 0; renderer.setPixelRatio(v); renderer.setSize(innerWidth, innerHeight); }, v => Math.round(v * 100) + ' %');
   slider('Sichtweite', 200, 440, 10, () => SET.far, v => { SET.far = v; applyLook(); }, v => Math.round(v) + ' m');
   box.appendChild(el('div', '', '<small>Bei schwachem PC: Auflösung und Sichtweite senken. Das Spiel senkt die Schatten bei niedriger Bildrate selbst, solange „Automatisch“ gewählt ist.</small>'));
+  { const r = el('div', 'srow'), l = el('label', '', 'FPS und Ping anzeigen'), c = el('input'); c.type = 'checkbox'; c.checked = SET.diag; c.addEventListener('change', () => { SET.diag = c.checked; saveSettings(); }); r.append(l, c); box.appendChild(r); }
   box.appendChild(el('h3', '', 'Lautstärke'));
   slider('Gesamt', 0, 1, 0.05, () => SET.vol.master, v => { SET.vol.master = v; applyVolumes(); }, pct);
   slider('Waffen und Explosionen', 0, 1, 0.05, () => SET.vol.w, v => { SET.vol.w = v; applyVolumes(); }, pct);
   slider('Umgebung (Vögel, Schritte, Einschläge)', 0, 1, 0.05, () => SET.vol.e, v => { SET.vol.e = v; applyVolumes(); }, pct);
+  slider('Wind', 0, 1, 0.05, () => SET.vol.wind, v => { SET.vol.wind = v; applyVolumes(); }, pct);
   slider('Kühe', 0, 1, 0.05, () => SET.vol.c, v => { SET.vol.c = v; applyVolumes(); }, pct);
   slider('Hinweistöne (Treffer, Aufnehmen …)', 0, 1, 0.05, () => SET.vol.u, v => { SET.vol.u = v; applyVolumes(); }, pct);
   box.appendChild(el('h3', '', 'Tasten (zum Ändern anklicken, dann die neue Taste drücken)'));
@@ -5825,10 +5833,24 @@ function drawCompass() {
 }
 
 // ---------- Hauptschleife ----------
+function updateDiagnostics(t) {
+  const el = $('diag'), show = !!(SET.diag && playing);
+  if (el.style.display !== (show ? 'block' : 'none')) el.style.display = show ? 'block' : 'none';
+  if (!show) return;
+  diagFrames++;
+  if (t - diagAt >= 750) { diagFps = Math.round(diagFrames * 1000 / (t - diagAt)); diagFrames = 0; diagAt = t; }
+  if (diagPingAt && t - diagPingAt > 5000) { diagPingAt = 0; diagPing = null; diagPingAtNext = t + 2500; }
+  if (ws && ws.readyState === 1 && !diagPingAt && t >= diagPingAtNext) {
+    diagPingId = (diagPingId + 1) % 2147483647; diagPingAt = t; diagPingAtNext = t + 2500;
+    ws.send(JSON.stringify({ t: 'ping', i: diagPingId }));
+  }
+  el.textContent = `${diagFps} FPS · Ping ${diagPing === null ? '…' : diagPing + ' ms'}`;
+}
 function loop(t) {
   requestAnimationFrame(loop);
   const dt = Math.min(0.05, (t - last) / 1000); last = t;
   if (!worldBuilt) return;
+  updateDiagnostics(t);
   const alive = me && !me.dead; moving = false; sprinting = false;
   const down = !!(alive && me.dn);
   if (down) { prone = true; crouch = false; zoom = false; if (keys.Space) { giveT += dt; if (giveT > 1.6 && ws && ws.readyState === 1) { giveT = -9; ws.send('{"t":"giveup"}'); } } else if (giveT > -1) giveT = 0; } else giveT = 0;
