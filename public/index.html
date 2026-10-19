@@ -3577,20 +3577,42 @@ function suppressorFor(gun) {
 }
 // Vordergriff sitzt an der modellierten Stützhandposition (U.fore). Die Abstände kommen damit pro Waffenmodell aus dessen eigenem Griffpunkt.
 // Bei MP7, Vector und USAS-12 liegt dort bereits ein integrierter Vordergriff; der Aufsatz sitzt deshalb weiter vorn. Pumpflinten tragen ihn am beweglichen Vorderschaft.
-const FOREGRIP_FORWARD = { mp7: 0.11, vector: 0.14, usas12: 0.13 };
+const FOREGRIP_FORWARD = { mp7: 0.11, vector: 0.14, usas12: 0.10 };
 const FOREGRIP_BODY = new THREE.MeshLambertMaterial({ color: 0x25282d }), FOREGRIP_EDGE = new THREE.MeshLambertMaterial({ color: 0x45494f });
 const FOREGRIP_GEO = { rail: new THREE.BoxGeometry(0.027, 0.006, 0.052), saddle: new THREE.BoxGeometry(0.031, 0.010, 0.038), handle: new THREE.CylinderGeometry(0.0105, 0.014, 0.082, 10) };
+const FOREGRIP_SURFACE_CACHE = new WeakMap();
+function foregripSurfaceY(geometry, x, z, fallbackY) {
+  const pos = geometry && geometry.getAttribute && geometry.getAttribute('position');
+  if (!pos) return fallbackY - 0.012;
+  let cache = FOREGRIP_SURFACE_CACHE.get(geometry);
+  if (!cache) FOREGRIP_SURFACE_CACHE.set(geometry, cache = new Map());
+  const key = Math.round(x * 1000) + ':' + Math.round(z * 1000);
+  if (cache.has(key)) return cache.get(key);
+  let lowest = Infinity, hits = 0;
+  for (let radiusZ of [0.018, 0.035, 0.060]) {
+    lowest = Infinity; hits = 0;
+    for (let i = 0; i < pos.count; i++) {
+      const dx = pos.getX(i) - x, dz = pos.getZ(i) - z, y = pos.getY(i);
+      if (Math.abs(dx) <= 0.034 && Math.abs(dz) <= radiusZ && y < fallbackY + 0.025 && y > fallbackY - 0.12) { lowest = Math.min(lowest, y); hits++; }
+    }
+    if (hits >= 3) break;
+  }
+  const surfaceY = hits ? lowest : fallbackY - 0.012;
+  cache.set(key, surfaceY);
+  return surfaceY;
+}
 function foregripFor(gun) {
   if (!gun || !gun.userData || !Array.isArray(gun.userData.fore) || gun.userData.fore.length < 3 || !gun.userData.fore.every(Number.isFinite)) return null;
   if (gun.userData.fgrip) return gun.userData.fgrip;
   const U = gun.userData, F = U.fore, forward = U.muzzle < 0 ? -1 : 1;
-  const z = F[2] + forward * (FOREGRIP_FORWARD[U.wid] || 0), topY = F[1] - 0.004, len = 0.082;
+  const z = F[2] + forward * (FOREGRIP_FORWARD[U.wid] || 0), len = 0.082;
+  const parent = WT && WT[U.wid] && WT[U.wid].cat === 'sg' && U.pump ? U.pump : gun;
+  const source = parent.children.find(o => o.geometry), surfaceY = foregripSurfaceY(source && source.geometry, F[0], z, F[1]), topY = surfaceY + 0.001;
   const m = new THREE.Group(), part = (geo, mat, x, y, zz) => { const o = new THREE.Mesh(geo, mat); o.position.set(x, y, zz); m.add(o); return o; };
-  // 6-Uhr-Schienenaufnahme plus kompakter, facettierter Vertikalgriff; Geometrien werden für alle Spieler geteilt.
+  // 6-Uhr-Schienenaufnahme liegt bündig an der Unterseite der jeweiligen Waffen-Geometrie.
   part(FOREGRIP_GEO.rail, FOREGRIP_EDGE, F[0], topY - 0.004, z);
   part(FOREGRIP_GEO.saddle, FOREGRIP_EDGE, F[0], topY - 0.012, z);
   part(FOREGRIP_GEO.handle, FOREGRIP_BODY, F[0], topY - 0.012 - len / 2, z);
-  const parent = WT && WT[U.wid] && WT[U.wid].cat === 'sg' && U.pump ? U.pump : gun;
   parent.add(m); U.fgrip = m; m.visible = false; return m;
 }
 function laserShow(i, own, gun) {                                         // Strahl beginnt an der Linse und folgt der Laufrichtung der Waffe
