@@ -3286,7 +3286,8 @@ function updateViewGun(dt, t, alive) {
   vg.position.set(B[0] * (1 - ads) + sprT * SP.x + bob * (0.005 + sprT * 0.004) + kickX * kick * kk + RK * RP.x, B[1] * (1 - ads) - U.sightY * ads + sprT * SP.y + Math.abs(bob) * (0.01 + sprT * 0.02) - dip * 0.25 + RK * RP.y - landK * 0.04 - jy * 0.03 - swK * swK * 0.34, B[2] + sprT * SP.z + kick * 0.08 * kk + slap + RK * RP.z);
   if (stabT >= 0) { stabT += dt; if (stabT > 0.45) stabT = -1; }
   const sk = stabT >= 0 ? stabCurve(stabT / 0.45) : 0;                // Stoßbewegung der Mistgabel
-  vg.rotation.set(kick * 0.1 * kk + dip * 0.3 + RK * RP.rx + sprT * SP.rx + vzPitch + swK * 0.55, sprT * SP.ry + vzYaw + kickRy * kick * kk + RK * RP.ry, dip * 0.5 + RK * RP.rz + kickRz * kick * kk + sprT * (SP.rz + bob * 0.04));   // Rückstoß, Nachlade-Kippen, Sprint-Haltung, Waffenwechsel
+  const muzzleKick = W.cat === 'pst' ? 0.1 : 0.2 - 0.1 * ads;  // Nicht-Pistolen kippen aus der Hüfte sichtbar stärker hoch; im ADS bleibt der alte Winkel
+  vg.rotation.set(kick * muzzleKick * kk + dip * 0.3 + RK * RP.rx + sprT * SP.rx + vzPitch + swK * 0.55, sprT * SP.ry + vzYaw + kickRy * kick * kk + RK * RP.ry, dip * 0.5 + RK * RP.rz + kickRz * kick * kk + sprT * (SP.rz + bob * 0.04));   // Rückstoß, Nachlade-Kippen, Sprint-Haltung, Waffenwechsel
   if (sk) { vg.position.z -= sk * 0.55; vg.position.y += sk * 0.05; vg.position.x -= sk * 0.1; vg.rotation.x -= sk * 0.12; vg.rotation.y += sk * 0.08; }
   const fl = vg.userData.flash; fl.visible = flash > 0; if (fl.visible) { fl.rotation.z = Math.random() * 6.28; fl.scale.setScalar(1 - ads * 0.5); }   // Mündungsfeuer: dreht sich zufällig, beim Zielen kleiner
   const scoped = alive && sniperZoom && ads > 0.85;           // Zielfernrohr-Ansicht
