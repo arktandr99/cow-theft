@@ -419,6 +419,9 @@ const WCAL = { p90: '5.7', mp7: '4.6', mp5a5: '9x19', mp5a2: '9x19', sterling: '
   fal: '7.62x51', g3a3: '7.62x51', mk17: '7.62x51', pkm: '7.62x51', m60e4: '7.62x51', mg3: '7.62x51' };
 const calMult = W => CAL_MULT[WCAL[W.id]] != null ? CAL_MULT[WCAL[W.id]] : 1;
 const recoilOf = W => Object.assign({ ph: ((W.id.charCodeAt(0) * 7 + W.id.length * 13) % 63) / 10, cal: calMult(W) }, RECOIL_CAT[W.cat], W.rc);
+// Sichtbarer Waffenstoß aus den Server-Waffenwerten: V/H bestimmen den Ausschlag, Gewicht dämpft ihn. M4A1 (V 25, H 7, 15 kg-Spielwert) ist die Referenz.
+const weaponKickScale = W => { const R = recoilOf(W), v = R.up > 0 ? R.up : (W.cat === 'sg' ? 0.016 : 0.01), mass = Math.sqrt(15 / Math.max(5, W.wt || 15)); return Math.max(0.55, Math.min(2.2, Math.sqrt(v / 0.01) * mass)); };
+const weaponSideScale = W => { const R = recoilOf(W), side = R.side > 0 ? R.side : (W.cat === 'sg' ? 0.008 : 0.0049); return Math.max(0.55, Math.min(2.2, (side / 0.0049) * Math.sqrt(15 / Math.max(5, W.wt || 15)))); };
 
 const SPRINT_RECOVER = 250;                     // ms nach dem Sprinten, bis geschossen werden darf (der Server prüft dasselbe)
 let crouch = false, crK = 0;                    // Hocke gewählt, weicher Übergang 0..1 (Augenhöhe)
@@ -3579,7 +3582,7 @@ function onFx(m) {
   if (mine) {
     fmShotAt = performance.now() / 1000; fmShotEm = !!m.em;
     muzzlePunch = Math.min(1.1, muzzlePunch + 0.32); // jeder Schuss stößt die Waffe sichtbar an, ohne den Kick aufzuschaukeln
-    { const km = Math.max(0.45, Math.min(1.6, calMult(W))); const adsKick = W.cat === 'pst' ? 1 - 0.4 * ads : 1.6 - 1.4 * ads; kickV += 70 * adsKick * proneRecoil(W) ** 0.6 * (W.cat === 'sg' || W.dmg >= 100 ? 1.6 : (W.cat === 'pst' ? 0.8 : 1)) * km * (me && me.at === 'grip' ? 0.7 : 1); flash = (W.sup || m.s) ? 0 : 0.05; kxT = (Math.random() - 0.5) * 0.03 * km; kryT = (Math.random() - 0.5) * 0.09 * km; krzT = (Math.random() - 0.5) * 0.2 * km; applyRecoil(W); }
+    { const kickScale = weaponKickScale(W), sideScale = weaponSideScale(W); const adsKick = W.cat === 'pst' ? 1 - 0.4 * ads : 1.6 - 1.4 * ads; kickV += 70 * adsKick * kickScale * proneRecoil(W) ** 0.6 * (W.cat === 'sg' || W.dmg >= 100 ? 1.6 : (W.cat === 'pst' ? 0.8 : 1)) * (me && me.at === 'grip' ? 0.7 : 1); flash = (W.sup || m.s) ? 0 : 0.05; kxT = (Math.random() - 0.5) * 0.03 * sideScale; kryT = (Math.random() - 0.5) * 0.09 * sideScale; krzT = (Math.random() - 0.5) * 0.2 * sideScale; applyRecoil(W); }
     if (vg) {
       const U = vg.userData.U;
       if (W.act === 'pump') { pumpT = 0; shellFlag = false; }
