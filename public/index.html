@@ -910,7 +910,13 @@ try { ldSaved = JSON.parse(localStorage.getItem('ct_loadout') || '{}') || {}; } 
 function saveLoadout() { try { ldSaved.cls = sel; (ldSaved.guns = ldSaved.guns || {})[sel] = sel1; ldSaved.w2 = sel2; ldSaved.nd = selN; ldSaved.at = selA; localStorage.setItem('ct_loadout', JSON.stringify(ldSaved)); } catch (e) { } }
 // Vorschaubild einer Waffe (Seitenansicht), mit einem zweiten kleinen Renderer gemalt und zwischengespeichert
 const thumbCache = {}; let thumbR = null, thumbS = null, thumbC = null;
-function thumbFor(id) { return thumbOf(id, () => buildWeapon(id)); }
+function thumbFor(id) {
+  return thumbOf(id, () => {
+    const w = buildWeapon(id);
+    if (w.userData.belt) w.userData.belt.links.visible = false; // verhindert den dunklen Metallstreifen in der kleinen LMG-Kartenvorschau
+    return w;
+  });
+}
 function thumbOf(id, make) {
   if (id in thumbCache) return thumbCache[id];
   let url = '';
@@ -4768,7 +4774,7 @@ function updateEnvAudio(dt, t) {
   }
   const inK = roomK, s = ENV.wS, T = AC.currentTime;
   envAud.wind.fl.frequency.setTargetAtTime(180 + 55 * s, T, 0.4);
-  envAud.wind.g.gain.setTargetAtTime(Math.min(0.14, (0.01 + 0.012 * s) * (1 - 0.6 * inK) * (0.85 + 0.15 * Math.sin(t * 0.7))), T, 0.4);
+  envAud.wind.g.gain.setTargetAtTime(Math.min(0.07, (0.005 + 0.006 * s) * (1 - 0.6 * inK) * (0.85 + 0.15 * Math.sin(t * 0.7))), T, 0.4);
   if (revSend) revSend.gain.setTargetAtTime(0.05 + 0.3 * inK + (ENV.wx === 3 ? 0.04 : 0) + 0.03 * ENV.cur.night, T, 0.25);
 }
 function sDoor(at, open) {
