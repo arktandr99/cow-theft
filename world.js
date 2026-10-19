@@ -504,12 +504,14 @@ function generate(cfg, seed) {
     };
     const rot = (cx, cz, r, m) => { let a = m ? -cx : cx, b = cz; for (let i = 0; i < r; i++) { const t = a; a = -b; b = t; } return [a, b]; };
     const cellOf = k => k.split(',').map(Number);
-    const GROUP_SIZE = 4, GROUPS = 4, want = GROUP_SIZE * GROUPS, centers = [], groupAttempts = [];
+    // Mehr, kleinere Grabenverbände über die Karte verteilen: jeder Verband bekommt mehrere Zufallsversuche,
+    // die bestehenden Freiflächen-Prüfungen lassen nur passende, ausreichend freie Stellen zu.
+    const GROUP_SIZE = 3, GROUPS = 7, want = GROUP_SIZE * GROUPS, centers = [], groupAttempts = [];
     const newCenter = () => {
       for (let n = 0; n < 80; n++) {
         const a = R() * Math.PI * 2, r = Math.sqrt(rr(125 * 125, (MAP - 75) * (MAP - 75))), c = { x: Math.cos(a) * r, z: Math.sin(a) * r };
         if (PEN.some(p => Math.hypot(c.x - p.x, c.z - p.z) < 92) || Math.hypot(c.x - L.vx, c.z - pzc) < 100) continue;
-        if (centers.some(q => Math.hypot(c.x - q.x, c.z - q.z) < 125)) continue;
+        if (centers.some(q => Math.hypot(c.x - q.x, c.z - q.z) < 95)) continue;
         return c;
       }
       return { x: rr(-150, 150), z: rr(-150, 150) };
