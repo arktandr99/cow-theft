@@ -3547,6 +3547,27 @@ function laserModFor(gun) {
   m.userData = { s, lx: ax, ly: ay, lz: zf + s * 0.009 };                  // Austrittspunkt des Strahls (Gun-Koordinaten): Spitze der Linse
   gun.add(m); gun.userData.lmod = m; return m;
 }
+// Schalldämpfergrößen nach Waffentyp; jede Waffe liefert ihre konkrete Mündungsposition in U.muzzle.
+const SUPPRESSOR_SIZE = { ar: [0.18, 0.017], br: [0.20, 0.019], lmg: [0.22, 0.021], dmr: [0.21, 0.019], snp: [0.23, 0.022], smg: [0.15, 0.016], sg: [0.18, 0.021], pst: [0.095, 0.013] };
+const SUPPRESSOR_MAT = new THREE.MeshLambertMaterial({ color: 0x34383d }), SUPPRESSOR_DARK = new THREE.MeshBasicMaterial({ color: 0x111315 }), SUPPRESSOR_GEO = {};
+function suppressorFor(gun) {
+  if (!gun || !gun.userData || typeof gun.userData.muzzle !== 'number') return null;
+  if (gun.userData.smod) return gun.userData.smod;
+  const W = WT && WT[gun.userData.wid], size = W && !W.sup && SUPPRESSOR_SIZE[W.cat];
+  if (!size) return null; // integrierte Schalldämpfer (z. B. AS Val / Honey Badger) bleiben Teil des Grundmodells
+  const [len, R] = size, z0 = gun.userData.muzzle, s = z0 < 0 ? -1 : 1, seat = 0.022;
+  const m = new THREE.Group(), cyl = (r, h, mat, z) => {
+    const key = r.toFixed(5) + ':' + h.toFixed(5), geo = SUPPRESSOR_GEO[key] || (SUPPRESSOR_GEO[key] = new THREE.CylinderGeometry(r, r, h, 14));
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.rotation.x = Math.PI / 2; mesh.position.set(0, 0, z); m.add(mesh); return mesh;
+  };
+  const mid = z0 + s * (len / 2 - seat / 2), front = z0 + s * (len - seat / 2);
+  cyl(R, len, SUPPRESSOR_MAT, mid);
+  cyl(R * 1.12, 0.012, SUPPRESSOR_MAT, z0 - s * 0.016);                     // Klemmkragen sitzt über dem vorhandenen Mündungsgerät
+  cyl(R * 1.04, 0.008, SUPPRESSOR_MAT, front - s * 0.004);
+  cyl(R * 0.55, 0.002, SUPPRESSOR_DARK, front - s * 0.001);              // dunkle Öffnung bündig an der Vorderseite
+  gun.add(m); gun.userData.smod = m; return m;
+}
 function laserShow(i, own, gun) {                                         // Strahl beginnt an der Linse und folgt der Laufrichtung der Waffe
   const mod = laserModFor(gun), u = mod.userData; mod.visible = true;
   gun.updateMatrixWorld(true);
@@ -3629,6 +3650,9 @@ function updateLasers() {                                                 // nac
   let n = 0;
   try {
     const gOwn = vg && vg.children[0];
+    const ownSup = worldBuilt && playing && me && !me.dead && !me.dn && curSlot() === 0 && me.quad == null && me.cow === null && me.at === 'sup' && gOwn;
+    if (ownSup) { const m = suppressorFor(gOwn); if (m) m.visible = true; }
+    else if (gOwn && gOwn.userData.smod) gOwn.userData.smod.visible = false;
     if (gOwn && gOwn.userData.lmod && !(me && me.at === 'laser')) gOwn.userData.lmod.visible = false;
     const eq = worldBuilt && playing && me && !me.dead && me.at === 'laser' && curSlot() === 0 && !me.dn && me.quad == null && me.cow === null && vg && vg.visible && gOwn && typeof gOwn.userData.muzzle === 'number';
     if (eq) laserModFor(gOwn).visible = true;                                                         // das Modul sitzt immer an der Waffe, der Strahl nur bei eingeschaltetem Laser (V)
@@ -3643,6 +3667,10 @@ function updateLasers() {                                                 // nac
     if (n === 0) laserAim = null;
     if (worldBuilt) for (const p of plist || []) {
       const g = pMesh[p.i], gun = g && g.userData.gun;
+      if (gun) {
+        if (p.su && g.visible) { const m = suppressorFor(gun); if (m) m.visible = true; }
+        else if (gun.userData.smod) gun.userData.smod.visible = false;
+      }
       if (gun && gun.userData.lmod && !(p.la && g.visible)) gun.userData.lmod.visible = false;
       if (gun && p.la && p.i !== myId && g.visible && typeof gun.userData.muzzle === 'number') laserModFor(gun).visible = true;
       if (p.la !== 1 || p.i === myId || p.d || n >= 7) continue;
@@ -3828,7 +3856,7 @@ function onSnap(m) {
     if (g && (g.userData.role !== p.r || (g.userData.team !== undefined && g.userData.team !== p.t))) { scene.remove(g); g = null; } // Rollen- oder Teamwechsel: neues Modell
     if (!g) { g = pMesh[p.i] = makePlayer(p.t, p.r, p.i, p.w); shadowize(g, true, true); scene.add(g); g.position.set(p.x, groundY(p.x, p.z), p.z); }
     else if (p.w && g.userData.wid !== p.w) swapGun(g, p.w);          // anderer Spieler hat die Waffe gewechselt
-    g.userData.t = { x: p.x, z: p.z, y: p.y, p: p.q != null ? -0.4 : p.p, rid: p.c !== null || p.q != null, q: p.q == null ? null : p.q, j: p.j || 0, sp: !!p.sp && p.c === null, cr: !!p.cr && p.c === null, pr: !!p.pr, bp: !!p.bp, dn: !!p.dn, ln: p.ln || 0, ad: !!p.ad, rl: p.rl || 0, sw: !!p.sw, em: p.em || 0, am: p.am || 0, fm: p.fm || '' }; g.userData.team = p.t;
+    g.userData.t = { x: p.x, z: p.z, y: p.y, p: p.q != null ? -0.4 : p.p, rid: p.c !== null || p.q != null, q: p.q == null ? null : p.q, j: p.j || 0, sp: !!p.sp && p.c === null, cr: !!p.cr && p.c === null, pr: !!p.pr, bp: !!p.bp, dn: !!p.dn, ln: p.ln || 0, ad: !!p.ad, rl: p.rl || 0, sw: !!p.sw, em: p.em || 0, am: p.am || 0, su: !!p.su, fm: p.fm || '' }; g.userData.team = p.t;
     if (!p.d) removeRagdoll(p.i);                               // wieder am Leben: Puppe weg
     g.visible = !p.d && !ragdolls[p.i] && !(p.cm && p.t !== myTeam && Math.hypot(p.x - pos.x, p.z - pos.z) > 14);   // getarnt im Heu: Gegner sieht man erst ab 14 m
     { const dnT = !!p.dn && p.t === myTeam, mk = g.userData.mark; mk.visible = !!(p.s && p.t !== myTeam); mk.material.color.setHex(0xff2222);   // gespottete Gegner: rote Raute
