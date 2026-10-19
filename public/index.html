@@ -5659,7 +5659,8 @@ let mmBase = null, mmNorth = false, largeMap = false;
 function setLargeMap(open) {
   largeMap = open; document.body.classList.toggle('maplarge', open);
   const cv = $('mm'); if (cv) { cv.width = cv.height = open ? 900 : 240; }
-  if (open) { for (const k in keys) keys[k] = false; if (document.pointerLockElement) document.exitPointerLock(); }
+  if (open) { for (const k in keys) keys[k] = false; mouseDown = false; if (document.pointerLockElement) document.exitPointerLock(); }
+  else if (playing && !menuOpen && renderer) { try { const lock = renderer.domElement.requestPointerLock(); if (lock && lock.catch) lock.catch(() => {}); } catch (e) { /* Browser verweigert */ } }
 }
 $('mapbg').addEventListener('click', () => setLargeMap(false));
 function buildMinimap() {
