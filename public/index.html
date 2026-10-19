@@ -919,6 +919,7 @@ function thumbFor(id, att = '') {
     animateBipod(w.userData, false, 0); // legt die Beine in die eingeklappte Position statt sie unskaliert als lange Striche zu rendern
     if (att === 'sup') suppressorFor(w);
     if (att === 'laser') laserModFor(w);
+    if (att === 'grip') { const m = foregripFor(w); if (m) m.visible = true; }
     return w;
   });
 }
@@ -3574,6 +3575,24 @@ function suppressorFor(gun) {
   cyl(R * 0.55, 0.002, SUPPRESSOR_DARK, front - s * 0.001);              // dunkle Öffnung bündig an der Vorderseite
   gun.add(m); gun.userData.smod = m; return m;
 }
+// Vordergriff sitzt an der modellierten Stützhandposition (U.fore). Die Abstände kommen damit pro Waffenmodell aus dessen eigenem Griffpunkt.
+// Bei MP7, Vector und USAS-12 liegt dort bereits ein integrierter Vordergriff; der Aufsatz sitzt deshalb weiter vorn. Pumpflinten tragen ihn am beweglichen Vorderschaft.
+const FOREGRIP_FORWARD = { mp7: 0.11, vector: 0.14, usas12: 0.13 };
+const FOREGRIP_BODY = new THREE.MeshLambertMaterial({ color: 0x25282d }), FOREGRIP_EDGE = new THREE.MeshLambertMaterial({ color: 0x45494f });
+const FOREGRIP_GEO = { rail: new THREE.BoxGeometry(0.027, 0.006, 0.052), saddle: new THREE.BoxGeometry(0.031, 0.010, 0.038), handle: new THREE.CylinderGeometry(0.0105, 0.014, 0.082, 10) };
+function foregripFor(gun) {
+  if (!gun || !gun.userData || !Array.isArray(gun.userData.fore) || gun.userData.fore.length < 3 || !gun.userData.fore.every(Number.isFinite)) return null;
+  if (gun.userData.fgrip) return gun.userData.fgrip;
+  const U = gun.userData, F = U.fore, forward = U.muzzle < 0 ? -1 : 1;
+  const z = F[2] + forward * (FOREGRIP_FORWARD[U.wid] || 0), topY = F[1] - 0.004, len = 0.082;
+  const m = new THREE.Group(), part = (geo, mat, x, y, zz) => { const o = new THREE.Mesh(geo, mat); o.position.set(x, y, zz); m.add(o); return o; };
+  // 6-Uhr-Schienenaufnahme plus kompakter, facettierter Vertikalgriff; Geometrien werden für alle Spieler geteilt.
+  part(FOREGRIP_GEO.rail, FOREGRIP_EDGE, F[0], topY - 0.004, z);
+  part(FOREGRIP_GEO.saddle, FOREGRIP_EDGE, F[0], topY - 0.012, z);
+  part(FOREGRIP_GEO.handle, FOREGRIP_BODY, F[0], topY - 0.012 - len / 2, z);
+  const parent = WT && WT[U.wid] && WT[U.wid].cat === 'sg' && U.pump ? U.pump : gun;
+  parent.add(m); U.fgrip = m; m.visible = false; return m;
+}
 function laserShow(i, own, gun) {                                         // Strahl beginnt an der Linse und folgt der Laufrichtung der Waffe
   const mod = laserModFor(gun), u = mod.userData; mod.visible = true;
   gun.updateMatrixWorld(true);
@@ -3659,6 +3678,9 @@ function updateLasers() {                                                 // nac
     const ownSup = worldBuilt && playing && me && !me.dead && !me.dn && curSlot() === 0 && me.quad == null && me.cow === null && me.at === 'sup' && gOwn;
     if (ownSup) { const m = suppressorFor(gOwn); if (m) m.visible = true; }
     else if (gOwn && gOwn.userData.smod) gOwn.userData.smod.visible = false;
+    const ownGrip = worldBuilt && playing && me && !me.dead && !me.dn && !me.mel && curSlot() === 0 && me.quad == null && me.cow === null && me.at === 'grip' && gOwn;
+    if (ownGrip) { const m = foregripFor(gOwn); if (m) m.visible = true; }
+    else if (gOwn && gOwn.userData.fgrip) gOwn.userData.fgrip.visible = false;
     if (gOwn && gOwn.userData.lmod && !(me && me.at === 'laser')) gOwn.userData.lmod.visible = false;
     const eq = worldBuilt && playing && me && !me.dead && me.at === 'laser' && curSlot() === 0 && !me.dn && me.quad == null && me.cow === null && vg && vg.visible && gOwn && typeof gOwn.userData.muzzle === 'number';
     if (eq) laserModFor(gOwn).visible = true;                                                         // das Modul sitzt immer an der Waffe, der Strahl nur bei eingeschaltetem Laser (V)
@@ -3676,6 +3698,8 @@ function updateLasers() {                                                 // nac
       if (gun) {
         if (p.su && g.visible) { const m = suppressorFor(gun); if (m) m.visible = true; }
         else if (gun.userData.smod) gun.userData.smod.visible = false;
+        if (p.fg && g.visible) { const m = foregripFor(gun); if (m) m.visible = true; }
+        else if (gun.userData.fgrip) gun.userData.fgrip.visible = false;
       }
       if (gun && gun.userData.lmod && !(p.la && g.visible)) gun.userData.lmod.visible = false;
       if (gun && p.la && p.i !== myId && g.visible && typeof gun.userData.muzzle === 'number') laserModFor(gun).visible = true;
