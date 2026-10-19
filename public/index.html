@@ -1606,11 +1606,15 @@ function createBeltFeed(g, spec) {
   const belt = { n, spec, phase: 0, target: 0, ammo: n, visible: n, cases, tips, links, dummy: new THREE.Object3D() };
   poseBelt(belt); return belt;
 }
-function feedBelt(U) { if (U && U.belt) U.belt.target = (U.belt.target + 1 / U.belt.n) % 1; }
+function feedBelt(U) {
+  const belt = U && U.belt; if (!belt || belt.ammo <= belt.n) return;
+  belt.target = (belt.target + 1 / belt.n) % 1;
+}
 function setBeltAmmo(U, ammo) {
   const belt = U && U.belt; if (!belt) return;
   const count = Math.max(0, Math.floor(Number(ammo) || 0));
   if (count === belt.ammo) return;
+  if (belt.ammo > belt.n && count <= belt.n) belt.phase = belt.target = 0; // letzte Patronen laufen ohne zyklisches Zurückspringen
   belt.ammo = count; belt.visible = Math.min(belt.n, count);
   belt.cases.count = belt.tips.count = belt.links.count = belt.visible;
   poseBelt(belt);
