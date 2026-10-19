@@ -923,7 +923,7 @@ function stepBullets(now) {
   hitQ = {};
 }
 
-function shoot(p, dir) {
+function shoot(p, dir, muzzle) {
   if (phase !== 'play') return;
   const now = Date.now();
   if (p.dead || over || p.quad !== null || p.melee || p.sprint || now < (p.sprintOff || 0) + SPRINT_RECOVER || now < p.nextShot - 12 || now < p.switchUntil) return;   // 12 ms Toleranz für Netz-Jitter
@@ -938,7 +938,9 @@ function shoot(p, dir) {
   p.bloom = Math.min(0.03, p.bloom + W.bloom * (p.att === 'grip' ? 0.55 : 1));   // Vordergriff: weniger Rückstoß-Aufbau
   const len = Math.hypot(...dir) || 1;
   const base = dir.map(v => v / len);
-  const [lnx, lnz] = leanVec(p), o = [p.x + lnx, eyeY(p), p.z + lnz];                 // beim Lehnen kommen die Schüsse aus der seitlich verschobenen Kamera
+  const [lnx, lnz] = leanVec(p), eye = [p.x + lnx, eyeY(p), p.z + lnz];
+  let o = eye;
+  if (Array.isArray(muzzle) && muzzle.length === 3 && muzzle.every(Number.isFinite) && Math.hypot(muzzle[0] - eye[0], muzzle[1] - eye[1], muzzle[2] - eye[2]) <= 2.2) o = muzzle; // gültiger Mündungsursprung nahe am Schützen
   let first = null;
   const [wax, waz] = windAcc(); p.revealUntil = now + 2500;                              // Schießen verrät einen Getarnten
   for (let i = 0; i < W.pel; i++) {
@@ -1854,7 +1856,7 @@ wss.on('connection', (ws, req) => {
         p.jy = (p.cow === null && p.quad === null && Number.isFinite(m.j)) ? Math.max(0, Math.min(MAX_JUMP, m.j)) : 0; // Sprunghöhe
       }
     }
-    else if (m.t === 'shoot' && Array.isArray(m.d) && m.d.length === 3 && m.d.every(Number.isFinite)) shoot(p, m.d);
+    else if (m.t === 'shoot' && Array.isArray(m.d) && m.d.length === 3 && m.d.every(Number.isFinite)) shoot(p, m.d, m.o);
     else if (m.t === 'mount') mount(p);
     else if (m.t === 'nade' && Array.isArray(m.d) && m.d.length === 3 && m.d.every(Number.isFinite)) throwNade(p, m.d);
     else if (m.t === 'ability') ability(p);
