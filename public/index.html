@@ -4276,8 +4276,8 @@ function buildTerrainMesh() {
 // gezeichnet (Felder, dann Wege, dann Plätze); gegen Gelände, Gebäude und Spieler gilt weiter der Tiefentest, ein kräftiger polygonOffset zieht sie sicher vor das Gelände.
 const UP = [0, 1, 0], DRAPE = { polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4, depthWrite: false };
 // Bodenanschmiegung: groundY() ist auf dem Gelände-Netz exakt (gleiche Dreiecksdiagonale). Zwischen den Stützpunkten läuft ein Band aber geradlinig, das Gelände knickt dagegen an den 4-m-Rasterkanten.
-// Darum sind die Netze fein unterteilt (Wege 0,5 m, Plätze und Felder 1 m) und liegen nur ~2-4 cm über dem Gelände; der Rest (Z-Fighting bei Entfernung) kommt vom polygonOffset im Material.
-const LIFT_FIELD = 0.02, LIFT_ROAD = 0.03, LIFT_PLAZA = 0.04;
+// Darum sind die Netze fein unterteilt (Wege 0,5 m, Plätze und Felder 1 m) und liegen nur wenige Millimeter über dem Gelände; polygonOffset verhindert Z-Fighting.
+const LIFT_FIELD = 0.002, LIFT_ROAD = 0.003, LIFT_PLAZA = 0.004;
 function addRibbon(B, r) {                                        // Weg als Band, das dem Gelände folgt
   const P = r.pts, S = [[P[0][0], P[0][1], 0]]; let dist = 0;
   for (let i = 0; i < P.length - 1; i++) {
