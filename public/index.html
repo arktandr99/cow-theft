@@ -1603,14 +1603,22 @@ function createBeltFeed(g, spec) {
   const cases = new THREE.InstancedMesh(caseGeo, caseMat, n), tips = new THREE.InstancedMesh(tipGeo, tipMat, n), links = new THREE.InstancedMesh(linkGeo, linkMat, n);
   cases.castShadow = tips.castShadow = links.castShadow = true; cases.receiveShadow = tips.receiveShadow = links.receiveShadow = true;
   g.add(cases, tips, links);
-  const belt = { n, spec, phase: 0, target: 0, cases, tips, links, dummy: new THREE.Object3D() };
+  const belt = { n, spec, phase: 0, target: 0, ammo: n, visible: n, cases, tips, links, dummy: new THREE.Object3D() };
   poseBelt(belt); return belt;
 }
 function feedBelt(U) { if (U && U.belt) U.belt.target = (U.belt.target + 1 / U.belt.n) % 1; }
+function setBeltAmmo(U, ammo) {
+  const belt = U && U.belt; if (!belt) return;
+  const count = Math.max(0, Math.floor(Number(ammo) || 0));
+  if (count === belt.ammo) return;
+  belt.ammo = count; belt.visible = Math.min(belt.n, count);
+  belt.cases.count = belt.tips.count = belt.links.count = belt.visible;
+  poseBelt(belt);
+}
 function poseBelt(belt) {
-  const { box } = belt.spec, { n, dummy, cases, tips, links } = belt, h0 = box.y + box.h / 2, h1 = 0.044 - h0;
-  for (let i = 0; i < n; i++) {
-    const t = ((i + 0.5) / n + belt.phase) % 1, y = h0 + t * h1 * 0.9, x = -0.016 - Math.sin(t * Math.PI) * 0.016 + box.x * 0.4 * (1 - t);
+  const { box } = belt.spec, { n, visible, dummy, cases, tips, links } = belt, h0 = box.y + box.h / 2, h1 = 0.044 - h0;
+  for (let i = 0; i < visible; i++) {
+    const slot = n - visible + i, t = ((slot + 0.5) / n + belt.phase) % 1, y = h0 + t * h1 * 0.9, x = -0.016 - Math.sin(t * Math.PI) * 0.016 + box.x * 0.4 * (1 - t);
     dummy.position.set(x, y, -0.034); dummy.updateMatrix(); cases.setMatrixAt(i, dummy.matrix);
     dummy.position.z = -0.0565; dummy.updateMatrix(); tips.setMatrixAt(i, dummy.matrix);
     dummy.position.z = -0.039; dummy.updateMatrix(); links.setMatrixAt(i, dummy.matrix);
@@ -2874,6 +2882,7 @@ function animPlayer(g, d, speed, t, dt) { // Laufanimation (Beine mit Knie), Sit
   dt = dt || 0.016;
   const u = g.userData, ph = t * 9, sw = Math.min(1, speed / 5) * 0.7, ek = 1 - Math.exp(-dt * 10), mvK = Math.min(1, speed / 2);
   animateBipod(u.gun && u.gun.userData, !!d.bp, dt);
+  setBeltAmmo(u.gun && u.gun.userData, d.am);
   animateBelt(u.gun && u.gun.userData, dt);
   const rid = !!d.rid;
   u.crK = (u.crK || 0) + ((d.cr ? 1 : 0) - (u.crK || 0)) * 0.25;   // weich in die Hocke wechseln
@@ -3259,6 +3268,7 @@ function updateViewGun(dt, t, alive) {
   if (me.w !== vgWid) setViewGun(me.w);
   const W = WT[me.w] || WT.m4a1, U = vg.userData.U, B = U.vg || VG_BASE;
   animateBipod(U, bipodActive(W), dt);
+  setBeltAmmo(U, me.ammo);
   animateBelt(U, dt);
   if (U.sel) selPose(U, fmodeOf(W), dt);                                                                          // Feuerwahlhebel folgt dem gewählten Feuermodus
   const scopedGun = W.scope > 0, sniperZoom = zoom && scopedGun;
@@ -3808,7 +3818,7 @@ function onSnap(m) {
     if (g && (g.userData.role !== p.r || (g.userData.team !== undefined && g.userData.team !== p.t))) { scene.remove(g); g = null; } // Rollen- oder Teamwechsel: neues Modell
     if (!g) { g = pMesh[p.i] = makePlayer(p.t, p.r, p.i, p.w); shadowize(g, true, true); scene.add(g); g.position.set(p.x, groundY(p.x, p.z), p.z); }
     else if (p.w && g.userData.wid !== p.w) swapGun(g, p.w);          // anderer Spieler hat die Waffe gewechselt
-    g.userData.t = { x: p.x, z: p.z, y: p.y, p: p.q != null ? -0.4 : p.p, rid: p.c !== null || p.q != null, q: p.q == null ? null : p.q, j: p.j || 0, sp: !!p.sp && p.c === null, cr: !!p.cr && p.c === null, pr: !!p.pr, bp: !!p.bp, dn: !!p.dn, ln: p.ln || 0, ad: !!p.ad, rl: p.rl || 0, sw: !!p.sw, em: p.em || 0, fm: p.fm || '' }; g.userData.team = p.t;
+    g.userData.t = { x: p.x, z: p.z, y: p.y, p: p.q != null ? -0.4 : p.p, rid: p.c !== null || p.q != null, q: p.q == null ? null : p.q, j: p.j || 0, sp: !!p.sp && p.c === null, cr: !!p.cr && p.c === null, pr: !!p.pr, bp: !!p.bp, dn: !!p.dn, ln: p.ln || 0, ad: !!p.ad, rl: p.rl || 0, sw: !!p.sw, em: p.em || 0, am: p.am || 0, fm: p.fm || '' }; g.userData.team = p.t;
     if (!p.d) removeRagdoll(p.i);                               // wieder am Leben: Puppe weg
     g.visible = !p.d && !ragdolls[p.i] && !(p.cm && p.t !== myTeam && Math.hypot(p.x - pos.x, p.z - pos.z) > 14);   // getarnt im Heu: Gegner sieht man erst ab 14 m
     { const dnT = !!p.dn && p.t === myTeam, mk = g.userData.mark; mk.visible = !!(p.s && p.t !== myTeam); mk.material.color.setHex(0xff2222);   // gespottete Gegner: rote Raute
