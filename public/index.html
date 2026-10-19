@@ -3573,7 +3573,7 @@ function onFx(m) {
   if (!mine && pMesh[m.i]) { const u = pMesh[m.i].userData; if (!W.sup && !m.s) u.flashAt = performance.now() / 1000; if (W.act === 'pump') u.pumpAt = performance.now() / 1000; if (W.act === 'bolt') u.boltAt = performance.now() / 1000; u.fmAt = performance.now() / 1000; u.fmEm = !!m.em; }   // Mündungsfeuer / Pumpen / Repetieren / Schlitten bei anderen Spielern
   if (mine) {
     fmShotAt = performance.now() / 1000; fmShotEm = !!m.em;
-    { const km = Math.max(0.45, Math.min(1.6, calMult(W))); const adsKick = W.cat === 'pst' ? 1 - 0.4 * ads : 1 - 0.8 * ads; kickV += 70 * adsKick * proneRecoil(W) ** 0.6 * (W.cat === 'sg' || W.dmg >= 100 ? 1.6 : (W.cat === 'pst' ? 0.8 : 1)) * km * (me && me.at === 'grip' ? 0.7 : 1); flash = (W.sup || m.s) ? 0 : 0.05; kxT = (Math.random() - 0.5) * 0.03 * km; kryT = (Math.random() - 0.5) * 0.09 * km; krzT = (Math.random() - 0.5) * 0.2 * km; applyRecoil(W); }
+    { const km = Math.max(0.45, Math.min(1.6, calMult(W))); const adsKick = W.cat === 'pst' ? 1 - 0.4 * ads : 1.4 - 1.2 * ads; kickV += 70 * adsKick * proneRecoil(W) ** 0.6 * (W.cat === 'sg' || W.dmg >= 100 ? 1.6 : (W.cat === 'pst' ? 0.8 : 1)) * km * (me && me.at === 'grip' ? 0.7 : 1); flash = (W.sup || m.s) ? 0 : 0.05; kxT = (Math.random() - 0.5) * 0.03 * km; kryT = (Math.random() - 0.5) * 0.09 * km; krzT = (Math.random() - 0.5) * 0.2 * km; applyRecoil(W); }
     if (vg) {
       const U = vg.userData.U;
       if (W.act === 'pump') { pumpT = 0; shellFlag = false; }

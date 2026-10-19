@@ -44,7 +44,7 @@ const SPRINT_RECOVER = 250;                        // ms nach dem Sprinten, bis 
 const LEG_MULT = 0.75;                             // Beintreffer richten weniger Schaden an
 // KI-Spieler: jedes Team wird mit Bots bis zu dieser Größe aufgefüllt (echte Spieler zählen mit).
 // Ändern mit Umgebungsvariable, z. B. Windows PowerShell:  $env:TEAM_SIZE=6; npm start    (0 = keine Bots)
-const TEAM_SIZE = process.env.TEAM_SIZE !== undefined ? Math.max(0, Math.min(12, parseInt(process.env.TEAM_SIZE, 10) || 0)) : 5;
+const TEAM_SIZE = process.env.TEAM_SIZE !== undefined ? Math.max(0, Math.min(12, parseInt(process.env.TEAM_SIZE, 10) || 0)) : 3;
 
 // ---------- Waffen (Werte angelehnt an Insurgency: Sandstorm) ----------
 // Aus Community-Guides übernommen: Feuerrate (rpm), Mündungsgeschwindigkeit (v, m/s), Magazingröße (mag), vertikaler/horizontaler Rückstoß (V/H), Gewicht (wt, % wie im Spiel).
@@ -373,7 +373,7 @@ function loadWorld(seed) {
 // ---------- Zustand ----------
 const players = {};
 let cows = [], nextId = 1, matchEnd = 0, over = false;
-let phase = 'play', lobbyEnd = 0, voteEnd = 0, voteOpts = [], voteGen = 0, voteTimer = null;   // Ablauf: 'lobby' (Warteraum) -> 'play' -> 'over' (Statistik + Kartenwahl) -> 'lobby' ...
+let phase = 'play', lobbyEnd = 0, voteEnd = 0, voteOpts = [], voteGen = 0;   // Ablauf: 'lobby' (Warteraum) -> 'play' -> 'over' (Statistik + Kartenwahl) -> 'lobby' ...
 let quadList = [], nades = [], smokes = [], nextNid = 1;   // Quads, Granaten im Flug, Rauchwolken
 let bullets = [], nextBid = 1;
 let barricades = [], nextBar = 1;                 // Sandsack-Deckungen der Pioniere                      // Geschosse in der Luft
@@ -471,12 +471,7 @@ function reset(seed) {
   over = false; voteOpts = [];
   if (LOBBY_S > 0) { phase = 'lobby'; lobbyEnd = Date.now() + LOBBY_S * 1000; matchEnd = Date.now() + MATCH_SECONDS * 1000; } else { phase = 'play'; matchEnd = Date.now() + MATCH_SECONDS * 1000; }
   for (const p of Object.values(players)) { p.cow = null; p.quad = null; p.kills = 0; p.deaths = 0; p.dl = 0; p.hs = 0; p.dmg = 0; p.revives = 0; p.ready = false; p.vote = -1; if (p.joined || p.bot) spawn(p); }
-  if (voteTimer) clearTimeout(voteTimer);
-  voteTimer = null; voteGen++;                                      // ältere Vorschau abbrechen bzw. beim nächsten Ergebnis ignorieren
-  if (!SEED_FIXED) {
-    const delay = Math.min(90000, Math.max(3000, MATCH_SECONDS * 500));
-    voteTimer = setTimeout(() => { voteTimer = null; prepareVote(); }, delay);  // Kartenvorschauen erst erzeugen, wenn der Server und die Runde warm sind
-  }
+  voteGen++;                                                        // laufende Kartenvorschau einer vorherigen Runde verwerfen
 }
 // Die Runde beginnt: Zeit läuft, Schüsse sind erlaubt
 function startPlay(now) {
@@ -498,7 +493,10 @@ async function prepareVote() {
     try { res.push(await renderPreview(cfg(sd))); }
     catch { res.push({ seed: sd, w: 0, rgb: '' }); }
   }
-  if (gen === voteGen) voteOpts = res;                              // nur einen Karten-Worker gleichzeitig ausführen
+  if (gen === voteGen) {
+    voteOpts = res;                                                  // nur einen Karten-Worker gleichzeitig ausführen
+    if (phase === 'over') for (const p of Object.values(players)) if (!p.bot) send(p, voteMsg());
+  }
 }
 
 // ---------- Rangliste (Datei rangliste.json im Projektordner) ----------
@@ -1598,7 +1596,7 @@ function botThink(p, now) {
   if (!p.rl && p.cow === null && !ai.target && I.cur < (W.tube ? W.mag : W.mag * 0.3 + 1)) startReload(p);
   // --- Gegner suchen (ca. 4x pro Sekunde) ---
   if (now >= ai.nextScan) {
-    ai.nextScan = now + (200 + RAD(80)) * BL.scan;
+    ai.nextScan = now + (400 + RAD(160)) * BL.scan;                  // seltenere Sichtprüfungen sparen CPU bei vielen Bots
     const e = p.cow !== null || now < (p.blindUntil || 0) ? null : pickEnemy(p);                // geblendete Bots sehen nichts
     if (e && ai.target !== e.id) ai.reactAt = now + rnd(BL.react[0], BL.react[1]);               // Reaktionszeit
     ai.target = e ? e.id : null;
@@ -1923,7 +1921,7 @@ const voteCounts = () => { const c = voteOpts.map(() => 0); for (const q of Obje
 const voteMsg = () => ({ t: 'voteopts', opts: voteOpts.map((o, i) => ({ i, seed: o.seed, same: o.seed === WORLD.seed, w: o.w, rgb: o.rgb })), v: voteCounts() });
 function sendVote(p) { if (phase === 'over' && voteOpts.length) send(p, voteMsg()); }
 function endRound(now) {
-  over = true; phase = 'over'; voteEnd = now + (SEED_FIXED || !voteOpts.length ? 15 : VOTE_S) * 1000;
+  over = true; phase = 'over'; voteEnd = now + (SEED_FIXED ? 15 : VOTE_S) * 1000;
   const s = score(), top = Math.max(...s), lead = s.map((v, t) => v === top ? t : -1).filter(t => t >= 0);
   const head = lead.length === 1 ? `Team ${TEAM_NAMES[lead[0]]} gewinnt!` : lead.length === TEAMS ? 'Unentschieden!' : `Unentschieden zwischen ${lead.map(t => TEAM_NAMES[t]).join(' und ')}!`;
   const part = Object.values(players).filter(q => q.joined || q.bot);
@@ -1938,7 +1936,7 @@ function endRound(now) {
   }
   saveRank();
   bc({ t: 'end', text: head + ` (${s.join(' : ')})`, win: lead, rows, mvp: mvp ? mvp.n : '', lb: rankTop(10), secs: Math.round((voteEnd - now) / 1000), fixed: SEED_FIXED ? 1 : 0 });
-  if (!SEED_FIXED && voteOpts.length) { const m = voteMsg(); for (const q of Object.values(players)) if (!q.bot) send(q, m); }
+  if (!SEED_FIXED) prepareVote();                                  // Karten erst in der ohnehin spielfreien Abstimmungsphase berechnen
   console.log('Runde beendet: ' + head + ' ' + s.join(':'));
 }
 function finishVote() {                                                          // Abstimmung auswerten: meiste Stimmen; bei Gleichstand oder ohne Stimmen entscheidet das Los unter den neuen Karten
