@@ -913,11 +913,7 @@ const thumbCache = {}; let thumbR = null, thumbS = null, thumbC = null;
 function thumbFor(id) {
   return thumbOf(id, () => {
     const w = buildWeapon(id);
-    if (w.userData.belt) {
-      w.userData.belt.cases.visible = false;
-      w.userData.belt.tips.visible = false;
-      w.userData.belt.links.visible = false;
-    } // dynamischer Instanzgurt erzeugt in der kleinen LMG-Kartenvorschau einen Streifen
+    animateBipod(w.userData, false, 0); // legt die Beine in die eingeklappte Position statt sie unskaliert als lange Striche zu rendern
     return w;
   });
 }
