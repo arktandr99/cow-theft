@@ -526,7 +526,7 @@ function spawn(p) {
   p.role = L.cls; p.w1 = L.w1; p.w2 = L.w2; p.inv = [mkInv(L.w1), mkInv(L.w2)]; p.slot = 0; p.rl = null; p.switchUntil = 0; p.melee = false; p.meleeNext = 0;
   p.hp = HP; p.helm = false; p.vest = 0; p.bloom = 0;
   p.dead = false; p.cow = null; p.quad = null; p.nextShot = 0; p.abilityAt = 0; p.boostUntil = 0; p.spotUntil = 0;
-  p.ads = false; p.moving = false; p.sprint = false; p.jy = 0; p.crouch = false; p.prone = false; p.lean = 0; p.sprintOff = 0;
+  p.ads = false; p.moving = false; p.sprint = false; p.jy = 0; p.crouch = false; p.prone = false; p.bipod = false; p.supp = 0; p.suppAt = Date.now(); p.lean = 0; p.sprintOff = 0;
   p.down = false; p.downAt = 0; p.downHp = 0; p.downBy = null; p.rev = 0; p.revAt = 0; p.reviving = false; p.revTarget = null; p.revP = 0;
   p.att = safeAtt(p.nextAtt); if (p.att === 'sup' && WEAPONS[L.w1].sup) p.att = '';                   // Aufsatz der Hauptwaffe (ein Schalldämpfer auf einer leisen Waffe wäre sinnlos)
   p.nadeKind = safeNade(p.nextNade); p.nades = p.bot ? 0 : NADE_MAX; p.nadeNext = 0; p.cook = null; p.cookBlow = 0;   // gewählte Granatenart (Bots haben keine)
@@ -644,7 +644,7 @@ function switchTo(p, s) {
   }
   if (p.cow !== null && s !== 1) { send(p, { t: 'msg', x: 'Auf der Kuh ist nur die Zweitwaffe erlaubt' }); return; }   // im Sattel: nur Pistole bzw. Zweitwaffe
   if (s === p.slot && !p.melee) return;
-  p.rl = null; p.slot = s; p.melee = false;
+  p.rl = null; p.slot = s; p.melee = false; p.bipod = false;
   const W = WEAPONS[curInv(p).w];
   p.switchUntil = now + (W.cat === 'pst' ? SWITCH_MS.pst : SWITCH_MS.other);
   p.nextShot = Math.max(p.nextShot, p.switchUntil);
@@ -734,7 +734,7 @@ function reviveTick(now) {
   for (const q of all) if (q.down && q.rev > 0 && now - q.revAt > 150) q.rev = Math.max(0, q.rev - dt * 0.5);
 }
 function kill(victim, killer, W, dir, how) {
-  victim.down = false; victim.rev = 0; victim.reviving = false;
+  victim.down = false; victim.rev = 0; victim.reviving = false; victim.bipod = false;
   victim.dead = true; victim.rl = null; victim.deaths++; victim.respawnAt = Date.now() + RESPAWN * 1000;
   shedGear(victim);
   const selfK = killer === victim;
@@ -765,6 +765,18 @@ function damageTo(v, k, W, dmg, head, dir, at) {
 }
 
 // Streuung: Zielen verringert sie, Bewegung und Hüftschuss erhöhen sie, dazu der Rückstoß-Aufbau (bloom)
+const BIPOD_WEAPONS = new Set(['m249', 'm60e4', 'pkm', 'mg3', 'rpk']);
+function suppressionLevel(p, now = Date.now()) {
+  const elapsed = Math.max(0, now - (p.suppAt || now)) / 1000;
+  p.supp = Math.max(0, (p.supp || 0) - elapsed * 0.65);
+  p.suppAt = now;
+  return p.supp;
+}
+function addSuppression(p, W, dist, now) {
+  const strength = W && W.cat === 'snp' ? 1.5 : (W && W.v < 343 ? 0.3 : 1);
+  p.supp = Math.min(1, suppressionLevel(p, now) + Math.max(0, 1 - dist / 6) * 0.4 * strength);
+  p.suppAt = now;
+}
 function spreadOf(p, W) {
   let sp = W.spread * (p.ads ? (p.att === 'laser' ? 1.12 : 1) : (p.att === 'laser' ? 1.6 : 2.5));   // Laser: Hüftschuss genauer, beim Zielen etwas schlechter
   if (p.moving) sp *= p.ads ? 1.3 : 1.8;
@@ -772,6 +784,8 @@ function spreadOf(p, W) {
   if (p.crouch) sp *= 0.7;                          // aus der Hocke ruhiger
   if (p.prone) sp *= 0.55;                          // liegend am ruhigsten
   if (p.lean) sp *= 0.9;                            // angelehnt etwas stabiler
+  if (p.bipod) sp *= 0.5;                           // aufgestelltes Zweibein: ruhigere Schussabgabe
+  sp *= 1 + suppressionLevel(p) * 0.35;             // nah vorbeifliegende Feindmunition verschlechtert kurz die Zielruhe
   return sp + p.bloom;
 }
 
@@ -893,7 +907,17 @@ function stepBullet(b, now) {
   for (const q of Object.values(players)) {
     if (q.id === b.owner || q.dead || q.team === b.team) continue;   // kein Friendly Fire
     for (const [h, r, z, sx, sz] of hitSpheres(q)) {
-      const t = raySphere(p0, d, [q.x + (sx || 0), h, q.z + (sz || 0)], r);
+      const center = [q.x + (sx || 0), h, q.z + (sz || 0)];
+      const along = Math.max(0, (center[0] - p0[0]) * d[0] + (center[1] - p0[1]) * d[1] + (center[2] - p0[2]) * d[2]);
+      if (along <= tMax) {
+        const dx = p0[0] + d[0] * along - center[0], dy = p0[1] + d[1] * along - center[1], dz = p0[2] + d[2] * along - center[2];
+        const nearMiss = Math.max(0, Math.hypot(dx, dy, dz) - r);
+        if (nearMiss < 6) {
+          if (!b.suppressed) b.suppressed = new Set();
+          if (!b.suppressed.has(q.id)) { b.suppressed.add(q.id); addSuppression(q, b.W, nearMiss, now); }
+        }
+      }
+      const t = raySphere(p0, d, center, r);
       if (t < bt) { bt = t; best = q; head = z === 'h'; zone = z; }
     }
   }
@@ -1744,7 +1768,7 @@ function botMove(p, ai, goal, enemy, now, dt) {
 
 function newPlayer(ws, team, name, bot) {
   const L = safeLoadout('sturm', 'm4a1', 'm9');
-  const p = { id: nextId++, ws, team, name, nextRole: L.cls, next1: L.w1, next2: L.w2, kills: 0, deaths: 0, cow: null, quad: null, nextNade: 'frag', nadeKind: 'frag', nades: 0, nadeNext: 0, dead: true, x: 0, z: 0, yaw: 0, pitch: 0, role: L.cls, w1: L.w1, w2: L.w2, slot: 0, rl: null, switchUntil: 0, hp: 0, helm: false, vest: 0, bloom: 0, ads: false, moving: false, sprint: false, jy: 0, respawnAt: 0, abilityAt: 0, boostUntil: 0, spotUntil: 0, nextShot: 0, cowIn: false, bot: !!bot, vx: 0, vz: 0, lx: 0, lz: 0 };
+  const p = { id: nextId++, ws, team, name, nextRole: L.cls, next1: L.w1, next2: L.w2, kills: 0, deaths: 0, cow: null, quad: null, nextNade: 'frag', nadeKind: 'frag', nades: 0, nadeNext: 0, dead: true, x: 0, z: 0, yaw: 0, pitch: 0, role: L.cls, w1: L.w1, w2: L.w2, slot: 0, rl: null, switchUntil: 0, hp: 0, helm: false, vest: 0, bloom: 0, ads: false, moving: false, sprint: false, jy: 0, bipod: false, supp: 0, suppAt: Date.now(), respawnAt: 0, abilityAt: 0, boostUntil: 0, spotUntil: 0, nextShot: 0, cowIn: false, bot: !!bot, vx: 0, vz: 0, lx: 0, lz: 0 };
   p.inv = [mkInv(L.w1), mkInv(L.w2)];
   return p;
 }
@@ -1852,6 +1876,8 @@ wss.on('connection', (ws, req) => {
         const spNow = !!m.sp; if (p.sprint && !spNow) p.sprintOff = Date.now(); p.sprint = spNow;   // Sprint beendet: kurze Erholzeit vor dem ersten Schuss
         p.prone = p.down || (p.cow === null && p.quad === null && !!m.pr && !swimming(p));                                          // liegend (nicht im Sattel, nicht im Wasser)
         p.crouch = p.cow === null && p.quad === null && !!m.cr && !p.prone;                                             // Hocke (nicht im Sattel)
+        const W = curInv(p) && WEAPONS[curInv(p).w];
+        p.bipod = !!m.bp && !p.down && p.slot === 0 && p.cow === null && p.quad === null && p.prone && !p.moving && !!W && BIPOD_WEAPONS.has(W.id);
         p.lean = p.cow === null && p.quad === null && !p.sprint && Number.isFinite(m.ln) ? Math.round(Math.max(-1, Math.min(1, m.ln)) * 20) / 20 : 0;   // seitliches Lehnen -1 links .. +1 rechts
         p.jy = (p.cow === null && p.quad === null && Number.isFinite(m.j)) ? Math.max(0, Math.min(MAX_JUMP, m.j)) : 0; // Sprunghöhe
       }
@@ -2010,7 +2036,7 @@ setInterval(() => {
   reviveTick(now);
   stepNades(now);
   stepBullets(now);
-  const pl = Object.values(players).filter(p => !p.obs).map(p => ({ i: p.id, n: p.name, t: p.team, x: p.x, z: p.z, y: p.yaw, p: p.pitch, h: Math.round(p.hp), d: p.dead ? 1 : 0, c: p.cow, q: p.quad, j: +(p.jy || 0).toFixed(2), sp: p.sprint ? 1 : 0, cr: p.crouch ? 1 : 0, pr: p.prone ? 1 : 0, rd: p.ready ? 1 : 0, jn: p.joined ? 1 : 0, dn: p.down ? 1 : 0, rv: p.down ? +(p.rev || 0).toFixed(2) : 0, ln: p.lean || 0, ad: p.ads ? 1 : 0, em: !p.melee && p.inv[p.slot] && p.inv[p.slot].cur <= 0 ? 1 : 0, fm: p.fm || '', la: p.att === 'laser' && p.slot === 0 && !p.melee && !p.dead && !p.down ? (p.laserOn === false ? 2 : 1) : 0, rl: p.rl ? (p.rl.tube ? 3 : (p.rl.fast ? 2 : 1)) : 0, sw: swimming(p) ? 1 : 0, b: now < p.boostUntil && !(p.role === 'sturm' && p.cow !== null) ? 1 : 0, s: now < p.spotUntil ? 1 : 0, r: p.role, w: p.melee ? 'fork' : p.inv[p.slot].w, k: p.kills, de: p.deaths, cm: camOf(p, now) ? 1 : 0 }));
+  const pl = Object.values(players).filter(p => !p.obs).map(p => ({ i: p.id, n: p.name, t: p.team, x: p.x, z: p.z, y: p.yaw, p: p.pitch, h: Math.round(p.hp), d: p.dead ? 1 : 0, c: p.cow, q: p.quad, j: +(p.jy || 0).toFixed(2), sp: p.sprint ? 1 : 0, cr: p.crouch ? 1 : 0, pr: p.prone ? 1 : 0, bp: p.bipod ? 1 : 0, rd: p.ready ? 1 : 0, jn: p.joined ? 1 : 0, dn: p.down ? 1 : 0, rv: p.down ? +(p.rev || 0).toFixed(2) : 0, ln: p.lean || 0, ad: p.ads ? 1 : 0, em: !p.melee && p.inv[p.slot] && p.inv[p.slot].cur <= 0 ? 1 : 0, fm: p.fm || '', la: p.att === 'laser' && p.slot === 0 && !p.melee && !p.dead && !p.down ? (p.laserOn === false ? 2 : 1) : 0, rl: p.rl ? (p.rl.tube ? 3 : (p.rl.fast ? 2 : 1)) : 0, sw: swimming(p) ? 1 : 0, b: now < p.boostUntil && !(p.role === 'sturm' && p.cow !== null) ? 1 : 0, s: now < p.spotUntil ? 1 : 0, r: p.role, w: p.melee ? 'fork' : p.inv[p.slot].w, k: p.kills, de: p.deaths, cm: camOf(p, now) ? 1 : 0 }));
   const cw = cows.map(c => [c.id, c.pen, +c.x.toFixed(1), +c.z.toFixed(1), +c.yaw.toFixed(2), c.tr != null ? 2 : c.rider !== null ? 1 : 0, c.tr != null ? c.tr : -1, c.tr != null ? c.slot : 0]);
   for (let i = drops.length - 1; i >= 0; i--) if (now >= drops[i].until) drops.splice(i, 1);
   const dr = drops.map(d => [d.id, d.type === 'med' ? 0 : 1, +d.x.toFixed(1), +d.z.toFixed(1), d.team, d.uses]);
