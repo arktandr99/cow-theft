@@ -1591,9 +1591,42 @@ function fireMvK(age, dur, hold) {
 const fireDur = W => Math.max(0.05, Math.min(0.13, ((W && W.rate) || 0.1) * 0.9));                       // Dauer eines Hin-und-Her, kurz bei Dauerfeuer
 // Steht das Teil gerade hinten? Kurz nach dem Schuss zählt die Meldung des Servers (em = Magazin leer), danach der Zustand der Waffe
 const fmHold = (fm, now, at, em, emptyNow) => !!(fm && fm.lk && (now - at < 0.35 ? em : emptyNow));
+let BELT_CASE_GEO = null, BELT_TIP_GEO = null, BELT_LINK_GEO = null;
+let BELT_CASE_MAT = null, BELT_TIP_MAT = null, BELT_LINK_MAT = null;
+function createBeltFeed(g, spec) {
+  const n = 7, caseGeo = BELT_CASE_GEO || (BELT_CASE_GEO = (() => { const x = new THREE.CylinderGeometry(0.0058, 0.0058, 0.030, 8); x.rotateX(Math.PI / 2); return x; })());
+  const tipGeo = BELT_TIP_GEO || (BELT_TIP_GEO = (() => { const x = new THREE.CylinderGeometry(0.0056, 0.0022, 0.017, 8); x.rotateX(Math.PI / 2); return x; })());
+  const linkGeo = BELT_LINK_GEO || (BELT_LINK_GEO = new THREE.BoxGeometry(0.0136, 0.0136, 0.007));
+  const caseMat = BELT_CASE_MAT || (BELT_CASE_MAT = new THREE.MeshPhongMaterial({ color: 0xc9a227, shininess: 34, specular: 0x2c2c2c }));
+  const tipMat = BELT_TIP_MAT || (BELT_TIP_MAT = new THREE.MeshPhongMaterial({ color: 0xb07a44, shininess: 34, specular: 0x2c2c2c }));
+  const linkMat = BELT_LINK_MAT || (BELT_LINK_MAT = new THREE.MeshPhongMaterial({ color: 0x6a6e74, shininess: 34, specular: 0x2c2c2c }));
+  const cases = new THREE.InstancedMesh(caseGeo, caseMat, n), tips = new THREE.InstancedMesh(tipGeo, tipMat, n), links = new THREE.InstancedMesh(linkGeo, linkMat, n);
+  cases.castShadow = tips.castShadow = links.castShadow = true; cases.receiveShadow = tips.receiveShadow = links.receiveShadow = true;
+  g.add(cases, tips, links);
+  const belt = { n, spec, phase: 0, target: 0, cases, tips, links, dummy: new THREE.Object3D() };
+  poseBelt(belt); return belt;
+}
+function feedBelt(U) { if (U && U.belt) U.belt.target = (U.belt.target + 1 / U.belt.n) % 1; }
+function poseBelt(belt) {
+  const { box } = belt.spec, { n, dummy, cases, tips, links } = belt, h0 = box.y + box.h / 2, h1 = 0.044 - h0;
+  for (let i = 0; i < n; i++) {
+    const t = ((i + 0.5) / n + belt.phase) % 1, y = h0 + t * h1 * 0.9, x = -0.016 - Math.sin(t * Math.PI) * 0.016 + box.x * 0.4 * (1 - t);
+    dummy.position.set(x, y, -0.034); dummy.updateMatrix(); cases.setMatrixAt(i, dummy.matrix);
+    dummy.position.z = -0.0565; dummy.updateMatrix(); tips.setMatrixAt(i, dummy.matrix);
+    dummy.position.z = -0.039; dummy.updateMatrix(); links.setMatrixAt(i, dummy.matrix);
+  }
+  cases.instanceMatrix.needsUpdate = tips.instanceMatrix.needsUpdate = links.instanceMatrix.needsUpdate = true;
+}
+function animateBelt(U, dt) {
+  const belt = U && U.belt; if (!belt) return;
+  const delta = (belt.target - belt.phase + 1) % 1;
+  if (delta < 0.0001) return;
+  belt.phase = (belt.phase + delta * (1 - Math.exp(-Math.max(0, dt) * 32))) % 1;
+  poseBelt(belt);
+}
 function buildWeapon(id) {
   if (!WDEF[id]) { const W = WT && WT[id], fb = { ar: 'm4a1', br: 'fal', lmg: 'm249', dmr: 'svd', snp: 'm24', smg: 'mp5a5', sg: 'm870', pst: 'm9' }; id = (W && fb[W.cat]) || 'm4a1'; }
-  const D = WGEO[id] || (WGEO[id] = defineWeapon(id)), g = new THREE.Group(), U = Object.assign({}, D.U, { pump: null, mag: null, bolt: null, ch: null, sel: null, bipod: null });
+  const D = WGEO[id] || (WGEO[id] = defineWeapon(id)), g = new THREE.Group(), U = Object.assign({}, D.U, { pump: null, mag: null, bolt: null, ch: null, sel: null, bipod: null, belt: null });
   const mk = geo => new THREE.Mesh(geo, WGLOSS);
   g.add(mk(D.G.main));
   if (D.G.mag) { const m = new THREE.Group(); m.add(mk(D.G.mag)); g.add(m); U.mag = m; }
@@ -1607,6 +1640,7 @@ function buildWeapon(id) {
     for (let i = 0; i < 2; i++) { const leg = new THREE.Mesh(legGeo, WGLOSS); leg.castShadow = true; leg.receiveShadow = true; bp.add(leg); }
     g.add(bp);
   }
+  if (U.beltSpec) U.belt = createBeltFeed(g, U.beltSpec);
   U.wid = id; g.userData = U;
   { const W0 = WT && WT[id]; if (U.sel) selPose(U, W0 && W0.modes ? W0.modes[0] : 's'); }
   return g;
@@ -1923,7 +1957,7 @@ def('honeybadger', (b, U) => {
 
 // ===== Maschinengewehre: M249 SAW, M60E4, PKM, MG3 (Gurtkasten = "Magazin") =====
 function lmg(b, U, o) {
-  const { BLK, STL, OIL, BRASS, RUB } = WC, S = o.S, rec = o.rec, WD = o.wood;
+  const { BLK, STL, OIL, RUB } = WC, S = o.S, rec = o.rec, WD = o.wood;
   b.prof([[-0.165, 0.046], [0.265, 0.046], [0.272, -0.040], [-0.165, -0.040]], 0.050, rec, 0, 0, 0, 0.004);                                           // Gehäuse
   b.prof([[-0.130, 0.066], [0.100, 0.066], [0.118, 0.046], [-0.150, 0.046]], 0.046, shade(rec, 1.15), 0, 0, 0, 0.004);                                // Zuführdeckel
   b.box(0.0016, 0.020, 0.070, OIL, 0.0256, 0.024, 0.14); b.box(0.0016, 0.016, 0.034, 0x34373c, 0.0262, 0.026, 0.14);                                 // Auswurffenster
@@ -1961,11 +1995,7 @@ function lmg(b, U, o) {
   b.rb(bx.w, bx.h, bx.d, 0.012, bc, bx.x, bx.y, bx.z); b.box(bx.w + 0.002, 0.006, bx.d + 0.002, shade(bc, 0.8), bx.x, bx.y + bx.h / 2 - 0.003, bx.z);
   for (let i = 0; i < 3; i++) b.box(bx.w + 0.002, 0.002, bx.d * 0.7, shade(bc, 0.7), bx.x, bx.y - bx.h * 0.25 + i * 0.026, bx.z);   // Prägerippen
   b.box(bx.w + 0.004, 0.024, 0.012, shade(bc, 0.6), bx.x, bx.y + bx.h / 2 - 0.016, bx.z + bx.d * 0.5 - 0.016);                                         // Verschluss
-  const sx0 = bx.x < 0 ? -1 : 0;                                                                                                                        // Gurt vom Kasten nach oben zur Zuführschale
-  for (let i = 0; i < 7; i++) { const t = i / 6, yy = bx.y + bx.h / 2 + t * (0.044 - bx.y - bx.h / 2 + 0.0) * 0.9, xx = -0.016 - Math.sin(t * Math.PI) * 0.016 + (bx.x * 0.4) * (1 - t);
-    const zr = -0.04;                                                                                                                                  // Patrone liegt längs der Waffe: Spitze zeigt nach vorn (-Z), Hülse und Gurtglied dahinter
-    b.cyl(0.0058, 0.030, BRASS, xx, yy, zr + 0.006, 8); b.cyl(0.0022, 0.017, 0xb07a44, xx, yy, zr - 0.0165, 8, 0.0056);                               // Hülse + zugespitztes Geschoss (Kupfer)
-    b.box(0.0136, 0.0136, 0.007, 0x6a6e74, xx, yy, zr + 0.001); }
+  U.beltSpec = { box: bx };                                                                                                                           // sichtbare Gurtpatronen laufen pro Schuss in die Zuführung
   b.use('main');
   Object.assign(U, { muzzle: mz - 0.0001 + 0.0, grip: [0, -0.108, 0.112], fore: [0, -0.01, o.foreZ || -0.24], sightY: S, eject: [0.026, 0.026, 0.12], mag: true, vg: o.vg || null,
     bipodSpec: { pivots: [-1, 1].map(sx => [sx * 0.016, -0.030, o.bip]), folded: [-1, 1].map(sx => [sx * 0.030, -0.034, o.bip + 0.15]), deployed: [-1, 1].map(sx => [sx * 0.105, -0.29, o.bip + 0.06]) } });
@@ -2844,6 +2874,7 @@ function animPlayer(g, d, speed, t, dt) { // Laufanimation (Beine mit Knie), Sit
   dt = dt || 0.016;
   const u = g.userData, ph = t * 9, sw = Math.min(1, speed / 5) * 0.7, ek = 1 - Math.exp(-dt * 10), mvK = Math.min(1, speed / 2);
   animateBipod(u.gun && u.gun.userData, !!d.bp, dt);
+  animateBelt(u.gun && u.gun.userData, dt);
   const rid = !!d.rid;
   u.crK = (u.crK || 0) + ((d.cr ? 1 : 0) - (u.crK || 0)) * 0.25;   // weich in die Hocke wechseln
   u.prK += ((d.pr && !rid && !d.sw ? 1 : 0) - u.prK) * (1 - Math.exp(-dt * 7));   // weich in die Bauchlage
@@ -3228,6 +3259,7 @@ function updateViewGun(dt, t, alive) {
   if (me.w !== vgWid) setViewGun(me.w);
   const W = WT[me.w] || WT.m4a1, U = vg.userData.U, B = U.vg || VG_BASE;
   animateBipod(U, bipodActive(W), dt);
+  animateBelt(U, dt);
   if (U.sel) selPose(U, fmodeOf(W), dt);                                                                          // Feuerwahlhebel folgt dem gewählten Feuermodus
   const scopedGun = W.scope > 0, sniperZoom = zoom && scopedGun;
   ads += ((zoom && W.cat !== 'mel' ? 1 : 0) - ads) * Math.min(1, dt * W.ads);                                  // Anlegen beim Zielen (schwere Waffen langsamer)
@@ -3608,8 +3640,9 @@ function onFx(m) {
   shotRing.push({ id0: m.id, n: m.n, o: m.o, d: m.d, w: m.w }); if (shotRing.length > 48) shotRing.shift();
   spawnBullet(m, W);
   sShot(m.s ? 'asval' : m.w, mine ? null : m.o);   // Schalldämpfer-Aufsatz: Geräusch einer leisen Waffe
-  if (!mine && pMesh[m.i]) { const u = pMesh[m.i].userData; if (!W.sup && !m.s) u.flashAt = performance.now() / 1000; if (W.act === 'pump') u.pumpAt = performance.now() / 1000; if (W.act === 'bolt') u.boltAt = performance.now() / 1000; u.fmAt = performance.now() / 1000; u.fmEm = !!m.em; }   // Mündungsfeuer / Pumpen / Repetieren / Schlitten bei anderen Spielern
+  if (!mine && pMesh[m.i]) { const u = pMesh[m.i].userData; if (!W.sup && !m.s) u.flashAt = performance.now() / 1000; if (W.act === 'pump') u.pumpAt = performance.now() / 1000; if (W.act === 'bolt') u.boltAt = performance.now() / 1000; u.fmAt = performance.now() / 1000; u.fmEm = !!m.em; feedBelt(u.gun && u.gun.userData); }   // Mündungsfeuer / Pumpen / Repetieren / Schlitten bei anderen Spielern
   if (mine) {
+    feedBelt(vg && vg.userData.U);
     fmShotAt = performance.now() / 1000; fmShotEm = !!m.em;
     // Das aufgestellte Zweibein dämpft auch den sichtbaren Waffenkick.
     muzzlePunch = Math.min(1.1, muzzlePunch + 0.32); // jeder Schuss stößt die Waffe sichtbar an, ohne den Kick aufzuschaukeln
