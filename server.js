@@ -379,14 +379,14 @@ let bullets = [], nextBid = 1;
 let barricades = [], nextBar = 1;                 // Sandsack-Deckungen der Pioniere                      // Geschosse in der Luft
 
 // ---------- Umgebung (Etappe 7): Tageszeit, Wetter, Wind, Türen, Tarnung im Heu, Funk ----------
-// Pro Runde würfelt der Server Tageszeit und Wetter (Umgebungsvariablen TOD 0-3 und WX 0-3 legen sie fest, WIND_S / WIND_A den Wind). Der Client malt Himmel, Licht, Regen und Nebel;
+// Pro Runde würfelt der Server Tageszeit und Wetter (Umgebungsvariablen TOD 0-3 und WX 0-3 legen sie fest, WIND_S / WIND_A den Wind). Der Client malt Himmel, Licht, Wolken und Nebel;
 // der Server nutzt es für die Spielregeln: Wind lenkt Geschosse ab, Nacht und Nebel verkürzen die Sicht der Bots, Türen blockieren Bewegung und Schüsse, Heu tarnt.
-const TOD_NAMES = ['Morgen', 'Mittag', 'Abend', 'Nacht'], WX_NAMES = ['Klar', 'Bewölkt', 'Regen', 'Nebel'];
+const TOD_NAMES = ['Morgen', 'Mittag', 'Abend', 'Nacht'], WX_NAMES = ['Klar', 'Bewölkt', 'Bewölkt', 'Nebel'];
 const envInt = (k, n) => { const v = process.env[k]; return v !== undefined && v !== '' && Number.isInteger(+v) && +v >= 0 && +v < n ? +v : -1; };
 const TOD_FIX = envInt('TOD', 4), WX_FIX = envInt('WX', 4);
 const WIND_FIX = process.env.WIND_S !== undefined && process.env.WIND_S !== '' && Number.isFinite(+process.env.WIND_S) ? Math.max(0, +process.env.WIND_S) : -1;
 const WIND_ANG_FIX = process.env.WIND_A !== undefined && process.env.WIND_A !== '' && Number.isFinite(+process.env.WIND_A) ? +process.env.WIND_A : null;
-const VIS_TOD = [0.85, 1, 0.9, 0.55], VIS_WX = [1, 0.95, 0.75, 0.45];   // Sichtfaktor für Bots
+const VIS_TOD = [0.85, 1, 0.9, 0.55], VIS_WX = [1, 0.95, 0.92, 0.45];   // Sichtfaktor für Bots
 const WIND_K = 0.4;                                                       // Beschleunigung eines Geschosses seitlich = Windstärke (m/s) mal diesen Wert (m/s²)
 let env = { tod: 1, wx: 0 }; const wind = { base: 3, ang: 0, s: 0, a: 0 };
 const pickW = w => { let r = Math.random() * w.reduce((a, b) => a + b, 0); for (let i = 0; i < w.length; i++) { r -= w[i]; if (r <= 0) return i; } return w.length - 1; };
@@ -395,8 +395,8 @@ function stepWind(now) {
   wind.s = Math.max(0, wind.base * g); wind.a = wind.ang + (WIND_FIX >= 0 ? 0 : 0.35 * Math.sin(now / 11000));
 }
 function rollEnv() {
-  env = { tod: TOD_FIX >= 0 ? TOD_FIX : pickW([0.25, 0.4, 0.2, 0.15]), wx: WX_FIX >= 0 ? WX_FIX : pickW([0.5, 0.25, 0.15, 0.1]) };
-  const rg = [[1, 6], [2, 8], [4, 10], [0, 2]][env.wx];
+  env = { tod: TOD_FIX >= 0 ? TOD_FIX : pickW([0.25, 0.4, 0.2, 0.15]), wx: WX_FIX >= 0 ? WX_FIX : pickW([0.55, 0.3, 0, 0.15]) };
+  const rg = [[1, 6], [2, 8], [2, 8], [0, 2]][env.wx];
   wind.base = WIND_FIX >= 0 ? WIND_FIX : rg[0] + Math.random() * (rg[1] - rg[0]);
   wind.ang = WIND_ANG_FIX !== null ? WIND_ANG_FIX : Math.random() * 6.283;
   stepWind(Date.now());
@@ -1553,7 +1553,7 @@ function losClear(o, tp) {   // freie Sicht zwischen zwei Punkten? Gebäude, Bau
   return t > len - 0.5;
 }
 function pickEnemy(p) {
-  let best = null, bd = BOT_RANGE[botCat(p)] * visMult();                       // Nacht, Regen und Nebel verkürzen die Sicht der Bots
+  let best = null, bd = BOT_RANGE[botCat(p)] * visMult();                       // Nacht und Nebel verkürzen die Sicht der Bots
   const nowE = Date.now();
   for (const q of Object.values(players)) {
     if (q.team === p.team || q.dead || q.obs) continue;
