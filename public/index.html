@@ -3286,7 +3286,7 @@ function updateViewGun(dt, t, alive) {
   vg.position.set(B[0] * (1 - ads) + sprT * SP.x + bob * (0.005 + sprT * 0.004) + kickX * kick * kk + RK * RP.x, B[1] * (1 - ads) - U.sightY * ads + sprT * SP.y + Math.abs(bob) * (0.01 + sprT * 0.02) - dip * 0.25 + RK * RP.y - landK * 0.04 - jy * 0.03 - swK * swK * 0.34, B[2] + sprT * SP.z + kick * 0.08 * kk + slap + RK * RP.z);
   if (stabT >= 0) { stabT += dt; if (stabT > 0.45) stabT = -1; }
   const sk = stabT >= 0 ? stabCurve(stabT / 0.45) : 0;                // Stoßbewegung der Mistgabel
-  const muzzleKick = W.cat === 'pst' ? 0.1 : 0.2 - 0.1 * ads;  // Nicht-Pistolen kippen aus der Hüfte sichtbar stärker hoch; im ADS bleibt der alte Winkel
+  const muzzleKick = W.cat === 'pst' ? 0.1 : 0.2 - 0.06 * ads; // Im ADS etwas mehr sichtbarer Mündungskick; Pistolen bleiben unverändert
   vg.rotation.set(kick * muzzleKick * kk + dip * 0.3 + RK * RP.rx + sprT * SP.rx + vzPitch + swK * 0.55, sprT * SP.ry + vzYaw + kickRy * kick * kk + RK * RP.ry, dip * 0.5 + RK * RP.rz + kickRz * kick * kk + sprT * (SP.rz + bob * 0.04));   // Rückstoß, Nachlade-Kippen, Sprint-Haltung, Waffenwechsel
   if (sk) { vg.position.z -= sk * 0.55; vg.position.y += sk * 0.05; vg.position.x -= sk * 0.1; vg.rotation.x -= sk * 0.12; vg.rotation.y += sk * 0.08; }
   const fl = vg.userData.flash; fl.visible = flash > 0; if (fl.visible) { fl.rotation.z = Math.random() * 6.28; fl.scale.setScalar(1 - ads * 0.5); }   // Mündungsfeuer: dreht sich zufällig, beim Zielen kleiner
@@ -3487,6 +3487,7 @@ function laserShow(i, own, gun) {                                         // Str
 // Schatten: (1) die Sonnenschatten werden vor der Mündung ausgeblendet (Shader-Zusatz weiter unten, ML_UNI), denn sonst würde der Schatten auch das Mündungslicht verschlucken;
 // (2) zusätzlich hellt jeder Schuss das Umgebungslicht ganz leicht auf ("Streulicht").
 const _mlP = new THREE.Vector3(), _mlQ = new THREE.Vector3(), ML_WARM = new THREE.Color(0xffc690);
+let muzzleLightNext = 0;
 function muzzleLightAt(L, fo, base, push, skipId) {
   fo.getWorldPosition(_mlP); _mlQ.set(0, 0, fo.position.z < 0 ? -1 : 1); fo.localToWorld(_mlQ); _mlQ.sub(_mlP).normalize();   // Richtung nach vorn (Laufrichtung)
   let d = push;
@@ -3503,7 +3504,9 @@ function muzzleLightAt(L, fo, base, push, skipId) {
   return { d, dir: _mlQ, dayK };
 }
 function mlShadowAt(i, L, w, dir) { ML_UNI.value[i].set(L.position.x, L.position.y, L.position.z, w); ML_DIR.value[i].set(dir.x, dir.y, dir.z, 0); }
-function updateMuzzleLights() {
+function updateMuzzleLights(now = performance.now()) {
+  if (now < muzzleLightNext) return;
+  muzzleLightNext = now + 33; // Mündungslicht und Hindernisprüfung müssen nicht in jedem Renderbild laufen
   if (!FLASHL.length) return;
   for (const L of FLASHL) L.intensity = 0;
   for (const v of ML_UNI.value) v.w = 0;
@@ -3574,7 +3577,7 @@ function onFx(m) {
   if (!mine && pMesh[m.i]) { const u = pMesh[m.i].userData; if (!W.sup && !m.s) u.flashAt = performance.now() / 1000; if (W.act === 'pump') u.pumpAt = performance.now() / 1000; if (W.act === 'bolt') u.boltAt = performance.now() / 1000; u.fmAt = performance.now() / 1000; u.fmEm = !!m.em; }   // Mündungsfeuer / Pumpen / Repetieren / Schlitten bei anderen Spielern
   if (mine) {
     fmShotAt = performance.now() / 1000; fmShotEm = !!m.em;
-    { const km = Math.max(0.45, Math.min(1.6, calMult(W))); const adsKick = W.cat === 'pst' ? 1 - 0.4 * ads : 1.4 - 1.2 * ads; kickV += 70 * adsKick * proneRecoil(W) ** 0.6 * (W.cat === 'sg' || W.dmg >= 100 ? 1.6 : (W.cat === 'pst' ? 0.8 : 1)) * km * (me && me.at === 'grip' ? 0.7 : 1); flash = (W.sup || m.s) ? 0 : 0.05; kxT = (Math.random() - 0.5) * 0.03 * km; kryT = (Math.random() - 0.5) * 0.09 * km; krzT = (Math.random() - 0.5) * 0.2 * km; applyRecoil(W); }
+    { const km = Math.max(0.45, Math.min(1.6, calMult(W))); const adsKick = W.cat === 'pst' ? 1 - 0.4 * ads : 1.4 - 1.05 * ads; kickV += 70 * adsKick * proneRecoil(W) ** 0.6 * (W.cat === 'sg' || W.dmg >= 100 ? 1.6 : (W.cat === 'pst' ? 0.8 : 1)) * km * (me && me.at === 'grip' ? 0.7 : 1); flash = (W.sup || m.s) ? 0 : 0.05; kxT = (Math.random() - 0.5) * 0.03 * km; kryT = (Math.random() - 0.5) * 0.09 * km; krzT = (Math.random() - 0.5) * 0.2 * km; applyRecoil(W); }
     if (vg) {
       const U = vg.userData.U;
       if (W.act === 'pump') { pumpT = 0; shellFlag = false; }
@@ -5639,6 +5642,7 @@ function buildMinimap() {
   });
   mmBase = c;
 }
+let nextHudMapDraw = 0;
 function drawMinimap() {
   const cv = $('mm'); if (!cv || !mmBase || !me) return;
   const g = cv.getContext('2d'), W = cv.width, cx = W / 2, rot = largeMap ? 0 : (mmNorth ? 0 : yaw), S = largeMap ? W / (2 * MAP) : MM_S, px = (largeMap ? 1.5 : 1) / S, centerX = largeMap ? 0 : pos.x, centerZ = largeMap ? 0 : pos.z;
@@ -5857,7 +5861,8 @@ function loop(t) {
   if (onQuad() && vg) vg.visible = false;                                  // keine Waffen auf dem Quad
   renderSB();
   updateRoomLight(dt); updateEnv(dt, t / 1000);
-  drawMinimap(); drawCompass(); updateCookHud();
+  if (t >= nextHudMapDraw) { nextHudMapDraw = t + 66; drawMinimap(); drawCompass(); }
+  updateCookHud();
   updateLasers();                                                          // erst jetzt: Kamera und Waffe stehen für dieses Bild fest
   updateMuzzleLights();
   try { updateMateName(t); } catch (err) { }
